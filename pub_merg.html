@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>EPUB 유틸리티</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
+:root{
+  --bg:#e8f0f8;--surf:#ffffff;--s2:#f0f5fb;--bd:#c0d4ea;
+  --ac:#1a5fa8;--acl:#ddeeff;--acd:#134a86;
+  --tx:#0d1f35;--mu:#5a7a9a;
+  --ok:#1a8c5a;--wn:#b06010;--er:#b02020;
+  --r:10px;--sh:0 2px 8px rgba(26,95,168,.10);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--tx);font-family:'Noto Sans KR',sans-serif;font-size:14px;min-height:100vh;display:flex;flex-direction:column;}
+
+header{background:linear-gradient(135deg,#134a86 0%,#1a5fa8 100%);padding:13px 20px;display:flex;align-items:center;gap:10px;flex-shrink:0;box-shadow:0 2px 10px rgba(26,95,168,.25);}
+.logo{font-family:'DM Mono',monospace;font-size:14px;font-weight:500;color:#fff;letter-spacing:.08em;flex:1;}
+.logo span{opacity:.55;}
+.hbadge{background:rgba(255,255,255,.18);color:#fff;font-family:'DM Mono',monospace;font-size:10px;padding:3px 10px;border-radius:20px;letter-spacing:.05em;}
+
+.tab-bar{background:var(--surf);border-bottom:2px solid var(--bd);display:flex;flex-shrink:0;overflow-x:auto;}
+.tab-bar::-webkit-scrollbar{display:none;}
+.tab-btn{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:0 20px;height:40px;border:none;background:transparent;color:var(--mu);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;white-space:nowrap;transition:color .15s,border-color .15s;flex-shrink:0;}
+.tab-btn:hover{color:var(--tx);}
+.tab-btn.active{color:var(--ac);border-bottom-color:var(--ac);font-weight:500;}
+.tab-page{display:none;flex:1;overflow-y:auto;}
+.tab-page.active{display:block;}
+
+.page{max-width:900px;margin:0 auto;padding:18px 16px;display:flex;flex-direction:column;gap:14px;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+@media(max-width:640px){.two-col{grid-template-columns:1fr;}}
+
+.card{background:var(--surf);border:1px solid var(--bd);border-radius:var(--r);padding:16px;box-shadow:var(--sh);}
+.card-hd{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--mu);margin-bottom:12px;display:flex;align-items:center;gap:7px;}
+
+.drop-zone{border:2px dashed var(--bd);border-radius:var(--r);padding:22px 14px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;background:var(--s2);display:block;}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--ac);background:var(--acl);}
+.drop-zone p{color:var(--mu);font-size:13px;line-height:1.8;}
+.drop-zone strong{color:var(--ac);}
+input[type="file"]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;}
+
+.file-list-wrap{border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;max-height:260px;overflow-y:auto;background:var(--s2);}
+.file-list-wrap::-webkit-scrollbar{width:4px;}
+.file-list-wrap::-webkit-scrollbar-thumb{background:var(--bd);border-radius:2px;}
+.file-list{list-style:none;}
+.file-item{display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--surf);border-bottom:1px solid var(--bd);user-select:none;}
+.file-item:last-child{border-bottom:none;}
+.file-num{font-family:'DM Mono',monospace;font-size:10px;color:var(--mu);min-width:22px;}
+.file-name{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.file-del{background:none;border:none;color:var(--bd);cursor:pointer;font-size:14px;padding:2px 4px;transition:color .12s;flex-shrink:0;border-radius:4px;}
+.file-del:hover{color:var(--er);background:#fee;}
+.file-empty{padding:18px;text-align:center;color:var(--mu);font-size:12px;font-family:'DM Mono',monospace;}
+
+.field{display:flex;flex-direction:column;gap:5px;}
+.field label{font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--mu);}
+.field input[type=text]{background:var(--s2);border:1.5px solid var(--bd);border-radius:8px;color:var(--tx);font-family:'Noto Sans KR',sans-serif;font-size:14px;padding:10px 12px;outline:none;width:100%;transition:border-color .18s;}
+.field input[type=text]:focus{border-color:var(--ac);}
+
+.tog-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;}
+.tog-info .tl{font-size:13px;color:var(--tx);font-weight:500;}
+.tog-info .td{font-size:11px;color:var(--mu);margin-top:2px;font-family:'DM Mono',monospace;}
+.tog{position:relative;width:42px;height:24px;flex-shrink:0;}
+.tog input{opacity:0;width:0;height:0;}
+.tog-sl{position:absolute;inset:0;background:#c8d8e8;border-radius:24px;cursor:pointer;transition:background .2s;}
+.tog-sl::before{content:'';position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);}
+.tog input:checked+.tog-sl{background:var(--ac);}
+.tog input:checked+.tog-sl::before{transform:translateX(18px);}
+
+.chip-list{display:flex;flex-wrap:wrap;gap:5px;}
+.chip{background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:4px 9px;font-size:11px;font-family:'DM Mono',monospace;display:flex;align-items:center;gap:5px;color:var(--mu);}
+.chip-del{background:none;border:none;color:var(--bd);cursor:pointer;font-size:12px;line-height:1;padding:0;transition:color .12s;}
+.chip-del:hover{color:var(--er);}
+
+.btn{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.06em;padding:9px 14px;border-radius:8px;border:1.5px solid transparent;cursor:pointer;transition:all .15s;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;}
+.btn-primary{background:var(--ac);color:#fff;border-color:var(--ac);width:100%;justify-content:center;padding:12px;font-size:12px;}
+.btn-primary:hover{background:var(--acd);border-color:var(--acd);}
+.btn-primary:disabled{opacity:.45;cursor:not-allowed;}
+.btn-ghost{background:transparent;border-color:var(--bd);color:var(--mu);}
+.btn-ghost:hover{border-color:var(--ac);color:var(--ac);}
+.btn-sm{padding:6px 11px;font-size:10px;}
+.btn-row{display:flex;gap:7px;flex-wrap:wrap;}
+
+.prog-wrap{display:none;margin-top:4px;}
+.prog-wrap.show{display:block;}
+.prog-bar{height:4px;background:var(--bd);border-radius:2px;overflow:hidden;}
+.prog-fill{height:100%;background:var(--ac);width:0%;transition:width .3s;}
+.prog-lbl{font-family:'DM Mono',monospace;font-size:10px;color:var(--mu);margin-top:4px;text-align:right;}
+
+.seq-result{border-radius:8px;padding:10px 12px;font-family:'DM Mono',monospace;font-size:11px;line-height:1.9;white-space:pre-wrap;display:none;}
+.seq-result.ok{background:#e4f4ed;border:1px solid #a0d4b8;color:var(--ok);display:block;}
+.seq-result.warn{background:#fff8e0;border:1px solid #e0c060;color:var(--wn);display:block;}
+.seq-result.error{background:#fee;border:1px solid #fcc;color:var(--er);display:block;}
+
+.info-box{background:var(--s2);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;font-size:12px;color:var(--mu);line-height:1.8;}
+.info-box strong{color:var(--tx);}
+
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--tx);color:#fff;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.04em;padding:9px 18px;border-radius:8px;border-left:4px solid var(--ac);opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:9999;white-space:pre-line;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.18);}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+#toast.ok{border-left-color:var(--ok);}
+#toast.err{border-left-color:var(--er);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">EPUB <span>UTILS</span></div>
+  <div class="hbadge">유틸리티</div>
+</header>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('epub-merge')">EPUB 합치기</button>
+  <button class="tab-btn" onclick="switchTab('txt-merge')">TXT 합치기</button>
+  <button class="tab-btn" onclick="switchTab('epub2txt')">EPUB → TXT</button>
+</div>
+
+<!-- ══════════════════════════════════════════
+     TAB 1 · EPUB 합치기
+══════════════════════════════════════════ -->
+<div class="tab-page active" id="tab-epub-merge">
+<div class="page">
+  <div class="info-box">📚 EPUB 파일을 여러 개 업로드하면 <strong>챕터·목차를 모두 살려서</strong> 하나로 합칩니다. <strong>ZIP으로 묶어서</strong> 한 번에 올려도 돼요.</div>
+  <div class="two-col">
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="card">
+        <div class="card-hd">EPUB 파일 <span style="margin-left:auto;font-size:10px;" id="em-count">0개</span></div>
+        <label class="drop-zone" id="em-drop-area" style="margin-bottom:10px;">
+          <p>📚 <strong>EPUB</strong> 또는 <strong>ZIP(epub 묶음)</strong><br>드래그하거나 <strong>클릭해서 선택</strong></p>
+          <input type="file" id="em-file-input" multiple accept=".epub,.zip"/>
+        </label>
+        <div id="em-loading" style="display:none;text-align:center;padding:12px;font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;">⏳ 파싱 중...</div>
+        <div id="em-chapter-list" style="display:flex;flex-direction:column;gap:4px;max-height:380px;overflow-y:auto;"></div>
+        <div class="btn-row" style="margin-top:9px;">
+          <button class="btn btn-ghost btn-sm" onclick="emClearAll()">전체 삭제</button>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="card">
+        <div class="card-hd">설정</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div class="field"><label>제목</label><input type="text" id="em-title" placeholder="책 제목" oninput="this.dataset.userEdited='1'"/></div>
+          <div class="field"><label>저자</label><input type="text" id="em-author" placeholder="저자 이름" oninput="this.dataset.userEdited='1'"/></div>
+          <div style="display:flex;flex-direction:column;gap:5px;">
+            <label style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--mu);">완결</label>
+            <div class="tog-row" style="background:var(--s2);border:1.5px solid var(--bd);border-radius:8px;padding:9px 12px;">
+              <label style="display:flex;align-items:center;gap:7px;font-size:13px;font-weight:500;color:var(--tx);cursor:pointer;"><input type="checkbox" id="em-chk-complete" onchange="this.dataset.userSet='1'"> 완결작</label>
+            </div>
+            <div id="em-complete-evidence" style="font-size:10px;color:var(--mu);font-family:'DM Mono',monospace;"></div>
+          </div>
+          <div>
+            <label class="btn btn-ghost" style="display:flex;justify-content:center;cursor:pointer;width:100%;">
+              📎 CSS · TXT 스타일 파일 추가
+              <input type="file" id="em-css-input" multiple accept=".css,.txt"/>
+            </label>
+            <div class="chip-list" id="em-css-chips" style="margin-top:8px;"></div>
+          </div>
+          <div class="tog-row">
+            <div class="tog-info"><div class="tl">미사용 CSS 선택자 제거</div></div>
+            <label class="tog"><input type="checkbox" id="em-chk-purge"/><span class="tog-sl"></span></label>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-hd">표지 이미지</div>
+        <div style="display:flex;gap:12px;align-items:flex-start;">
+          <div id="em-cover-thumb" style="width:72px;height:104px;border:1.5px dashed var(--bd);border-radius:8px;background:var(--s2);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0;overflow:hidden;">📖</div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:7px;">
+            <label class="btn btn-ghost" style="display:flex;justify-content:center;cursor:pointer;width:100%;">
+              🖼 이미지 선택
+              <input type="file" id="em-cover-input" accept="image/*"/>
+            </label>
+            <button class="btn btn-ghost" style="width:100%;" onclick="openEmCoverGoogleSearch()">🔍 표지 구글 검색</button>
+            <button class="btn btn-ghost" style="width:100%;" onclick="clearEmCover()">표지 제거</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="prog-wrap show" id="em-prog" style="margin-bottom:8px;">
+          <div class="prog-bar"><div class="prog-fill" id="em-prog-fill"></div></div>
+          <div class="prog-lbl" id="em-prog-lbl"></div>
+        </div>
+        <button class="btn btn-primary" id="em-build-btn" onclick="buildMergedEpub()">챕터 살려서 EPUB 합치기</button>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     TAB 2 · TXT 합치기
+══════════════════════════════════════════ -->
+<div class="tab-page" id="tab-txt-merge">
+<div class="page">
+  <div class="info-box">📄 TXT / HTML 파일을 업로드하면 순서대로 합쳐 하나의 <strong>.txt</strong>로 저장합니다. 파일 사이에는 빈 줄 두 개가 삽입됩니다.</div>
+
+  <div class="card">
+    <div class="card-hd">파일 목록 <span id="tm-count" style="margin-left:auto;font-size:10px;">0개</span></div>
+    <label class="drop-zone" id="tm-drop-area" style="margin-bottom:10px;">
+      <p>📄 <strong>TXT · HTML</strong> 또는 <strong>ZIP</strong><br>드래그하거나 <strong>클릭해서 선택</strong></p>
+      <input type="file" id="tm-file-input" multiple accept=".txt,.html,.htm,.xhtml,.zip"/>
+    </label>
+    <div class="file-list-wrap">
+      <ul class="file-list" id="tm-file-list"><li class="file-empty">파일이 없습니다</li></ul>
+    </div>
+    <div class="btn-row" style="margin-top:9px;">
+      <button class="btn btn-ghost btn-sm" onclick="tmClearAll()">전체 삭제</button>
+      <button class="btn btn-ghost btn-sm" onclick="tmSortByName()">이름순 정렬</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <button class="btn btn-primary" onclick="mergeTxt()">TXT 합치기 →</button>
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     TAB 3 · EPUB → TXT
+══════════════════════════════════════════ -->
+<div class="tab-page" id="tab-epub2txt">
+<div class="page">
+  <div class="info-box">📖 EPUB 파일을 업로드하면 내부 텍스트를 추출해 <strong>.txt</strong>로 저장합니다. 챕터 순서를 유지하며, HTML 태그는 제거됩니다.</div>
+  <div class="card">
+    <div class="card-hd">EPUB 파일 선택</div>
+    <label class="drop-zone" id="epub2txt-drop">
+      <p>📖 <strong>EPUB 파일</strong>을 드래그하거나 <strong>클릭해서 선택</strong></p>
+      <input type="file" id="epub2txt-input" accept=".epub"/>
+    </label>
+    <div id="epub2txt-info" style="margin-top:10px;display:none;" class="seq-result ok"></div>
+  </div>
+  <div class="card">
+    <div class="card-hd">옵션</div>
+    <div class="tog-row">
+      <div class="tog-info"><div class="tl">챕터 구분선 추가</div><div class="td">챕터 사이에 ── 구분선 삽입</div></div>
+      <label class="tog"><input type="checkbox" id="e2t-sep" checked/><span class="tog-sl"></span></label>
+    </div>
+    <div class="tog-row">
+      <div class="tog-info">
+        <div class="tl">챕터 제목 강조</div>
+        <div class="td">h1~h3 제목 앞에 ▌ 기호 추가 (제목은 항상 포함됨)</div>
+      </div>
+      <label class="tog"><input type="checkbox" id="e2t-title" checked/><span class="tog-sl"></span></label>
+    </div>
+  </div>
+  <div class="card">
+    <button class="btn btn-primary" id="epub2txt-btn" onclick="convertEpubToTxt()" disabled>TXT로 변환하기</button>
+    <div class="prog-wrap" id="e2t-prog" style="margin-top:10px;">
+      <div class="prog-bar"><div class="prog-fill" id="e2t-fill"></div></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+var S={
+  emCssFiles:[],
+  emEpubs:[],
+  emCoverData:null,
+  epub2txtData:null,
+  tmFiles:[]
+};
+
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function readText(file){return new Promise(function(r,j){var fr=new FileReader();fr.onload=function(e){r(e.target.result);};fr.onerror=j;fr.readAsText(file,'utf-8');});}
+function tick(){return new Promise(function(r){setTimeout(r,0);});}
+
+var tTimer;
+function toast(msg,type){
+  var el=document.getElementById('toast');
+  el.textContent=msg;el.className='show '+(type||'');
+  clearTimeout(tTimer);tTimer=setTimeout(function(){el.className='';},2600);
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 파일명에서 제목/저자 자동 추출 (kkp_pub.html / un_jung.html과 동일 로직)
+// ══════════════════════════════════════════════════════════════
+var META_TAGS='로판|현판|무협지|무협|판무|선협|판타지|로맨스|퓨전판타지|퓨전|라노벨|라이트노벨|대체역사|게임판타지|아포칼립스|아카데미|헌터물|헌터|회귀물|빙의물|환생물|시스템물|드라마|미스터리|스릴러|호러|SF|BL|GL|백합|텍본|정발|정식발매|리디북스|리디|조아라|문피아|카카오페이지|네이버시리즈|노벨피아|이북|이펍';
+function isAgeOrRatingTag(s){
+  var t=(s||'').trim();
+  return /^\d+\s*세(?:이상)?$/.test(t)||/^\d+\+?\s*금$/.test(t)||/^(청불|청소년이용불가|전체이용가|전연령|모든연령|성인전용|성인물|성인|성년|미성년|R\d+)$/i.test(t)||/^\d+\+?$/.test(t);
+}
+function detectTitleAuthorFromFilename(filename){
+  var name=String(filename||'').normalize('NFC').replace(/\.(txt|html?|xhtml|zip|epub)$/i,'');
+  name=name.replace(/^\s*[\[\(<【]?\s*(?:공유\s*금지|공금|유출\s*금지|외부\s*유출\s*금지|배포\s*금지)\s*[\]\)>】]?[_\s-]+/i,'');
+  name=name.replace(/[_\s-]+(?:공유\s*금지|공금|유출\s*금지|배포\s*금지)\s*$/i,'');
+  var tagRun='(?:'+META_TAGS+')(?:[_\\s-]+(?:'+META_TAGS+'))*';
+  name=name.replace(new RegExp('^[_\\s-]*'+tagRun+'[_\\s-]+','i'),'');
+  name=name.replace(new RegExp('[_\\s-]+'+tagRun+'\\s*$','i'),'');
+  name=name.replace(/\s*[\(\[]?\s*(?:완결|完結|끝)\s*[\)\]]?\s*$/,'').trim();
+  name=name.replace(/\s*\d+\s*(?:권|화|부|장)\s*[\(\[]?\s*(?:완결|완|完)?\s*[\)\]]?\s*$/,'').trim();
+  name=name.replace(/_/g,' ').replace(/\s+/g,' ').trim();
+  var title='',author='';
+  var bracketHead=name.match(/^\[([^\]]{1,15})\]\s*(.+)$/);
+  var bracketTail=name.match(/^(.+?)\s*\[([^\]]{1,15})\]\s*$/);
+  var dashSplit=name.match(/^(.+?)\s*-\s*([^\s]{1,12})/);
+  if(bracketHead&&!isAgeOrRatingTag(bracketHead[1])){
+    author=bracketHead[1].trim();title=bracketHead[2].trim();
+  }else if(bracketTail&&!isAgeOrRatingTag(bracketTail[2])){
+    author=bracketTail[2].trim();title=bracketTail[1].trim();
+  }else if(dashSplit&&!isAgeOrRatingTag(dashSplit[2])&&!/^\d+$/.test(dashSplit[2].trim())){
+    title=dashSplit[1].trim();author=dashSplit[2].trim();
+  }else{
+    title=name;
+  }
+  title=title.replace(/\s*\d+\s*(?:권|화|부|장)\s*(?:완결|완|完)?\s*$/,'').trim();
+  title=title.replace(/\s*[-~∼]?\s*\d+\s*[-~∼]\s*\d+\s*(?:권|화|장)?\s*(?:완결|완|完)?\s*$/,'').trim();
+  return{title:title,author:author};
+}
+function applyEmAutoTitleAuthor(filename){
+  var titleEl=document.getElementById('em-title'),authorEl=document.getElementById('em-author');
+  if(!titleEl||!authorEl)return;
+  if(titleEl.dataset.userEdited==='1'&&authorEl.dataset.userEdited==='1')return;
+  var r=detectTitleAuthorFromFilename(filename);
+  if(titleEl.dataset.userEdited!=='1'&&r.title)titleEl.value=r.title;
+  if(authorEl.dataset.userEdited!=='1'&&r.author)authorEl.value=r.author;
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 완결 여부 자동 감지 (파일명 + 마지막 챕터 본문 끝부분)
+// ══════════════════════════════════════════════════════════════
+function detectCompletionAuto(filenames,lastChapterText){
+  var evidence=[];
+  var nameMarker=/(완결|完結|完|\(완\)|\(完\)|-완-|_완_|끝)\s*(\.\w+)?$/;
+  if((filenames||[]).some(function(n){return nameMarker.test(String(n).replace(/\.\w+$/,'').trim());}))evidence.push('파일명');
+  if(lastChapterText){
+    var text=lastChapterText.trim().startsWith('<')?(function(){try{var tmp=document.createElement('div');tmp.innerHTML=lastChapterText;return tmp.textContent||'';}catch(e){return lastChapterText;}})():lastChapterText;
+    var lines=text.split('\n').map(function(l){return l.trim();}).filter(Boolean);
+    var tail=lines.slice(-40);
+    var strongRe=/^(완|끝|完|完\.|끝\.|완결|完結|<完>|<끝>|<완>|\(完\)|\(완\)|\(끝\)|[-—–─]\s*(완|完|완결|끝)\s*[-—–─])$/;
+    if(tail.some(function(l){return strongRe.test(l);}))evidence.push('본문 마지막');
+  }
+  return{isComplete:evidence.length>0,evidence:evidence};
+}
+function applyEmAutoCompletion(filenames,lastChapterText){
+  var chk=document.getElementById('em-chk-complete');
+  var ev=document.getElementById('em-complete-evidence');
+  if(!chk)return;
+  var r=detectCompletionAuto(filenames,lastChapterText);
+  if(chk.dataset.userSet!=='1')chk.checked=r.isComplete;
+  if(ev)ev.textContent=(chk.checked&&r.evidence.length)?('(근거: '+r.evidence.join(', ')+')'):'';
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 누락 회차 자동 감지 — 권/화/회 등 단위 혼용 대응
+// ══════════════════════════════════════════════════════════════
+function detectMissingChapters(labels){
+  labels=(labels||[]).filter(Boolean);
+  if(labels.length<3)return{unit:null,missing:[],nums:[]};
+  var byUnit={};
+  labels.forEach(function(raw){
+    var t=String(raw).normalize('NFC');
+    var re=/(\d+)\s*(권|부|화|회|편|장)/g,m,found=false;
+    while((m=re.exec(t))){(byUnit[m[2]]=byUnit[m[2]]||[]).push(parseInt(m[1],10));found=true;}
+    if(found)return;
+    var en=t.match(/(?:Chapter|Episode|Part|Volume|Ch|Ep)\.?\s*(\d+)/i);
+    if(en){(byUnit['en']=byUnit['en']||[]).push(parseInt(en[1],10));return;}
+    var p=t.match(/^\s*#?\s*(\d+)\s*[.\s]/);
+    if(p){(byUnit['plain']=byUnit['plain']||[]).push(parseInt(p[1],10));}
+  });
+  var topUnit='',topDistinct=0;
+  Object.keys(byUnit).forEach(function(u){
+    var distinct=new Set(byUnit[u]).size;
+    if(distinct>topDistinct){topUnit=u;topDistinct=distinct;}
+  });
+  if(!topUnit||topDistinct<3)return{unit:null,missing:[],nums:[]};
+  var nums=byUnit[topUnit].slice().sort(function(a,b){return a-b;});
+  var first=nums[0],last=nums[nums.length-1];
+  if(last-first>1000||first>50)return{unit:topUnit,missing:[],nums:nums};
+  var set={};nums.forEach(function(n){set[n]=true;});
+  var missing=[];
+  for(var n=first;n<=last;n++){if(!set[n]){missing.push(n);if(missing.length>100)break;}}
+  return{unit:(topUnit==='en'||topUnit==='plain')?'':topUnit,missing:missing,nums:nums};
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 표지 구글 이미지 검색 (EPUB 합치기 탭)
+// ══════════════════════════════════════════════════════════════
+function openEmCoverGoogleSearch(){
+  var title=(document.getElementById('em-title').value||'').trim();
+  var author=(document.getElementById('em-author').value||'').trim();
+  var q=title&&author?(title+' '+author+' 표지'):title?(title+' 표지'):author?(author+' 책 표지'):'';
+  if(!q){toast('제목이나 저자를 먼저 입력해주세요','err');return;}
+  window.open('https://www.google.com/search?q='+encodeURIComponent(q)+'&tbm=isch','_blank');
+}
+function clearEmCover(){
+  S.emCoverData=null;
+  document.getElementById('em-cover-thumb').innerHTML='📖';
+  toast('표지 제거됨');
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 간이 EPUB 유효성 체크 (병합 직전 실행)
+// ══════════════════════════════════════════════════════════════
+function validateMergedEpubBeforeBuild(chapters,title,coverData){
+  var warnings=[];
+  if(!title||title==='ebook_merged')warnings.push('제목이 입력되지 않았습니다.');
+  if(!coverData)warnings.push('표지 이미지가 없습니다.');
+  if(!chapters.length)warnings.push('챕터가 없습니다.');
+  var emptyChs=chapters.filter(function(ch){return!ch.content||ch.content.replace(/<[^>]+>/g,'').trim().length<5;});
+  if(emptyChs.length)warnings.push('본문이 비어있는 챕터가 '+emptyChs.length+'개 있습니다: '+emptyChs.slice(0,3).map(function(ch){return ch.title;}).join(', ')+(emptyChs.length>3?' 외':''));
+  var titleMap={};
+  chapters.forEach(function(ch){titleMap[ch.title]=(titleMap[ch.title]||0)+1;});
+  var dupTitles=Object.keys(titleMap).filter(function(t){return titleMap[t]>1;});
+  if(dupTitles.length)warnings.push('목차 제목이 중복됩니다: '+dupTitles.slice(0,3).join(', ')+(dupTitles.length>3?' 외':''));
+  var mc=detectMissingChapters(chapters.map(function(ch){return ch.title;}));
+  if(mc.missing.length)warnings.push('회차 누락 의심: '+mc.missing.slice(0,10).join(', ')+(mc.unit||'')+(mc.missing.length>10?' 외':''));
+  return warnings;
+}
+
+function switchTab(n){
+  document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active');});
+  document.querySelectorAll('.tab-page').forEach(function(p){p.classList.remove('active');});
+  document.querySelector('[onclick="switchTab(\''+n+'\')"]').classList.add('active');
+  document.getElementById('tab-'+n).classList.add('active');
+  if(n==='epub-merge')renderEmList();
+}
+
+// ═══════════════════════════════
+// TXT 합치기
+// ═══════════════════════════════
+
+// 파일명에서 회차 번호 추출 (001화, 1화, 001, ep001 등)
+function extractEpNum(name){
+  var m=name.match(/(\d+)/g);
+  return m?parseInt(m[m.length-1],10):null;
+}
+
+async function tmAddFiles(fl){
+  var added=0, skipped=0;
+
+  for(var i=0;i<fl.length;i++){
+    var file=fl[i];
+    if(/\.zip$/i.test(file.name)){
+      try{
+        var buf=await file.arrayBuffer();
+        var zip=await JSZip.loadAsync(buf);
+
+        // ── ZIP 내 파일 수집 ──────────────────────────────────────────
+        // 알집은 같은 파일을 루트·폴더 두 경로로 중복 저장하거나
+        // 파일명 인코딩 차이로 동일 파일이 여러 entry로 보이는 경우가 있음.
+        // 따라서 basename + 파일크기를 key로 삼아 실질적 중복을 제거.
+        var entriesByKey={};
+        zip.forEach(function(zipPath,zipEntry){
+          if(zipEntry.dir)return;
+          if(!/\.(txt|html|htm|xhtml)$/i.test(zipPath))return;
+          // 파일명 정규화: NFC 유니코드 + 소문자
+          var raw=zipPath.split('/').pop();
+          var basename=raw.normalize('NFC');
+          // key = 정규화된 파일명 + 파일 크기 (같은 파일 다른 경로 모두 잡힘)
+          var key=basename+'::'+zipEntry._data.uncompressedSize;
+          if(!entriesByKey[key]){
+            entriesByKey[key]={entry:zipEntry,fname:basename};
+          }
+        });
+
+        var entries=Object.values(entriesByKey);
+        entries.sort(function(a,b){return a.fname.localeCompare(b.fname,'ko',{numeric:true});});
+
+        for(var j=0;j<entries.length;j++){
+          var ename=entries[j].fname;
+          // 이미 같은 이름이 목록에 있으면 스킵
+          if(S.tmFiles.some(function(f){return f.name.normalize('NFC')===ename;})){skipped++;continue;}
+          var etext=await entries[j].entry.async('string');
+          S.tmFiles.push({name:ename,text:etext});
+          added++;
+        }
+      }catch(e){toast('ZIP 읽기 실패: '+file.name,'err');}
+    }else if(/\.(txt|html|htm|xhtml)$/i.test(file.name)){
+      var nname=file.name.normalize('NFC');
+      if(S.tmFiles.some(function(f){return f.name.normalize('NFC')===nname;})){skipped++;continue;}
+      var ftext=await readText(file);
+      S.tmFiles.push({name:nname,text:ftext});
+      added++;
+    }
+  }
+  renderTmList();
+  if(added>0){
+    toast(added+'개 추가'+(skipped?' (중복 '+skipped+'개 자동 제외)':''),'ok');
+  }else{
+    toast('추가된 파일 없음 — 모두 이미 등록됨','wn');
+  }
+}
+
+// 회차 번호 기준으로 중복/빠진 회차 검사
+function tmCheckSequence(){
+  var nums=S.tmFiles.map(function(f){return{name:f.name,n:extractEpNum(f.name)};}).filter(function(x){return x.n!==null;});
+  if(nums.length<2)return null;
+  nums.sort(function(a,b){return a.n-b.n;});
+  var dupes=[],missing=[];
+  var seen={};
+  nums.forEach(function(x){
+    if(seen[x.n]){dupes.push(x.n);}else{seen[x.n]=true;}
+  });
+  for(var n=nums[0].n;n<=nums[nums.length-1].n;n++){
+    if(!seen[n])missing.push(n);
+  }
+  return{dupes:dupes,missing:missing,first:nums[0].n,last:nums[nums.length-1].n,total:nums.length};
+}
+
+// 연속된 숫자를 범위로 압축: [1,2,3,5,6,10] → "1~3, 5~6, 10"
+function rangeStr(arr){
+  if(!arr.length)return'';
+  var ranges=[],start=arr[0],end=arr[0];
+  for(var i=1;i<arr.length;i++){
+    if(arr[i]===end+1){end=arr[i];}
+    else{ranges.push(start===end?start+'':start+'~'+end);start=end=arr[i];}
+  }
+  ranges.push(start===end?start+'':start+'~'+end);
+  return ranges.join(', ');
+}
+
+function renderTmList(){
+  var ul=document.getElementById('tm-file-list');ul.innerHTML='';
+  document.getElementById('tm-count').textContent=S.tmFiles.length+'개';
+  if(!S.tmFiles.length){ul.innerHTML='<li class="file-empty">파일이 없습니다</li>';return;}
+
+  // 중복 파일명 집합 (강조 표시용)
+  var nameCnt={};
+  S.tmFiles.forEach(function(f){nameCnt[f.name]=(nameCnt[f.name]||0)+1;});
+
+  S.tmFiles.forEach(function(f,i){
+    var isDupe=nameCnt[f.name]>1;
+    var li=document.createElement('li');li.className='file-item';
+    if(isDupe)li.style.background='#fff8e0';
+    li.innerHTML='<span class="file-num" style="'+(isDupe?'color:#b06010;font-weight:bold;':'')+'">'+String(i+1).padStart(2,'0')+'</span>'
+      +'<span class="file-name" title="'+esc(f.name)+'" style="'+(isDupe?'color:#b06010;':'')+'">'+esc(f.name)+(isDupe?' ⚠️':'')+'</span>'
+      +'<button class="file-del" data-i="'+i+'">✕</button>';
+    li.querySelector('.file-del').addEventListener('click',function(e){
+      e.stopPropagation();S.tmFiles.splice(parseInt(this.dataset.i),1);renderTmList();
+    });
+    ul.appendChild(li);
+  });
+
+  // 상태 요약 배너
+  var warn=document.getElementById('tm-seq-warn');
+  if(!warn){warn=document.createElement('div');warn.id='tm-seq-warn';warn.style.cssText='margin-top:8px;';
+    ul.parentNode.parentNode.insertBefore(warn,ul.parentNode.nextSibling);}
+  var chk=tmCheckSequence();
+  if(!chk){warn.innerHTML='';return;}
+
+  var lines=[];
+  var st='<div style="padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.9;font-family:\'Noto Sans KR\',sans-serif;';
+  if(!chk.dupes.length&&!chk.missing.length){
+    warn.innerHTML=st+'background:#e4f4ed;border:1px solid #a0d4b8;color:#1a8c5a;">'
+      +'✓ <strong>'+chk.first+'~'+chk.last+'화</strong> 총 <strong>'+chk.total+'개</strong> — 누락·중복 없음</div>';
+  }else{
+    if(chk.dupes.length){
+      lines.push('⚠️ 중복 <strong>'+chk.dupes.length+'건</strong> — '+chk.dupes.join(', ')+'화');
+    }
+    if(chk.missing.length){
+      lines.push('⚠️ 누락 <strong>'+chk.missing.length+'화</strong> — '+rangeStr(chk.missing)+'화');
+    }
+    warn.innerHTML=st+'background:#fff8e0;border:1px solid #e0c060;color:#7a4a00;">'+lines.join('<br>')+'</div>';
+  }
+}
+
+function tmClearAll(){S.tmFiles=[];renderTmList();}
+function tmSortByName(){S.tmFiles.sort(function(a,b){return a.name.localeCompare(b.name,'ko',{numeric:true});});renderTmList();}
+
+function mergeTxt(){
+  if(!S.tmFiles.length){toast('파일이 없습니다','err');return;}
+  var chk=tmCheckSequence();
+  if(chk&&(chk.dupes.length||chk.missing.length)){
+    var msg='';
+    if(chk.dupes.length)msg+='중복 '+chk.dupes.length+'건: '+chk.dupes.join(', ')+'화\n';
+    if(chk.missing.length)msg+='누락 '+chk.missing.length+'화: '+rangeStr(chk.missing)+'화\n';
+    if(!confirm(msg+'\n그래도 합치시겠습니까?'))return;
+  }
+  // HTML이면 텍스트만 추출 (p/div/h태그 → 줄바꿈 보존)
+  var parts=S.tmFiles.map(function(f){
+    var t=f.text.trim();
+    if(t.startsWith('<')){
+      var tmp=document.createElement('div');tmp.innerHTML=t;
+      tmp.querySelectorAll('script,style,nav').forEach(function(el){el.remove();});
+      // 블록 요소(p, div, h1~h6, br 등)에 줄바꿈 삽입
+      tmp.querySelectorAll('p,div,h1,h2,h3,h4,h5,h6,li,blockquote').forEach(function(el){
+        el.insertAdjacentText('beforebegin','\n');
+        el.insertAdjacentText('afterend','\n');
+      });
+      tmp.querySelectorAll('br').forEach(function(el){
+        el.replaceWith('\n');
+      });
+      return tmp.textContent.trim().replace(/\n{3,}/g,'\n\n');
+    }
+    return t;
+  });
+  var merged=parts.join('\n\n\n');
+  var blob=new Blob([merged],{type:'text/plain;charset=utf-8'});
+  var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='merged.txt';a.click();URL.revokeObjectURL(url);
+  toast('TXT 합치기 완료 ('+S.tmFiles.length+'개)','ok');
+}
+
+// ═══════════════════════════════
+// EPUB → TXT
+// ═══════════════════════════════
+async function loadEpubForConvert(file){
+  if(!/\.epub$/i.test(file.name)){toast('EPUB 파일을 선택하세요','err');return;}
+  try{
+    var buf=await file.arrayBuffer();
+    var zip=await JSZip.loadAsync(buf);
+    S.epub2txtData={zip:zip,name:file.name};
+    var info=document.getElementById('epub2txt-info');
+    info.style.display='block';info.textContent='✓ '+file.name+' 로드됨 — 변환 버튼을 눌러주세요';
+    document.getElementById('epub2txt-btn').disabled=false;
+    toast(file.name+' 로드됨','ok');
+  }catch(e){toast('EPUB 읽기 실패: '+e.message,'err');}
+}
+
+function extractTextFromNode(node,doTitleMark){
+  // 노드를 순서대로 순회하면서 제목/본문 텍스트를 올바르게 추출
+  var sections=[];
+  var currentLines=[];
+  function flush(){
+    var t=currentLines.join('\n').trim();
+    if(t)sections.push(t);
+    currentLines=[];
+  }
+  function walk(el){
+    var tag=(el.tagName||'').toLowerCase();
+    if(tag==='script'||tag==='style'||tag==='nav')return;
+    if(/^h[1-4]$/.test(tag)){
+      flush();
+      var htxt=el.textContent.trim();
+      if(htxt)currentLines.push((doTitleMark?'▌ ':'')+htxt);
+      flush();
+      return;
+    }
+    var isBlock=(/^(p|div|li|blockquote|section|article)$/.test(tag));
+    if(isBlock&&!el.querySelector('p,div,section,article,blockquote')){
+      var t=el.textContent.trim().replace(/\u00a0/g,' ').replace(/\s+/g,' ');
+      t=t.replace(/([\uAC00-\uD7A3\w])\s+\(/g,'$1(').replace(/\)\s+([\uAC00-\uD7A3\w])/g,')$1');
+      if(t)currentLines.push(t);
+      return;
+    }
+    for(var c=el.firstChild;c;c=c.nextSibling){
+      if(c.nodeType===3){// text node
+        var t2=c.textContent.trim().replace(/\u00a0/g,' ').replace(/\s+/g,' ');
+        if(t2&&!isBlock)currentLines.push(t2);
+      }else if(c.nodeType===1){walk(c);}
+    }
+  }
+  walk(node);
+  flush();
+  return sections.join('\n');
+}
+
+async function convertEpubToTxt(){
+  if(!S.epub2txtData){toast('EPUB 파일을 먼저 선택하세요','err');return;}
+  var btn=document.getElementById('epub2txt-btn');btn.disabled=true;
+  var pw=document.getElementById('e2t-prog');pw.classList.add('show');
+  try{
+    var zip=S.epub2txtData.zip;
+    var doSep=document.getElementById('e2t-sep').checked;
+    var doTitleMark=document.getElementById('e2t-title').checked;
+    var opfPath=null;
+    zip.forEach(function(path){if(path.endsWith('.opf'))opfPath=path;});
+    if(!opfPath)throw new Error('OPF 파일을 찾을 수 없습니다');
+    var opfText=await zip.file(opfPath).async('string');
+    var opfBase=opfPath.split('/').slice(0,-1).join('/');if(opfBase)opfBase+='/';
+
+    // href는 URL 인코딩되어 있을 수 있으므로 디코딩해서 저장
+    var hrefMap={};
+    var mItems=opfText.match(/<item[^>]+>/gi)||[];
+    mItems.forEach(function(item){
+      var idM=item.match(/id="([^"]+)"/);var hrM=item.match(/href="([^"]+)"/);
+      if(idM&&hrM){
+        var decoded=decodeURIComponent(hrM[1]);
+        hrefMap[idM[1]]=decoded;
+      }
+    });
+
+    var spineIds=[];
+    var spM=opfText.match(/<spine[^>]*>([\s\S]*?)<\/spine>/i);
+    if(spM){var refs=spM[1].match(/<itemref[^>]+>/gi)||[];refs.forEach(function(r){var m=r.match(/idref="([^"]+)"/);if(m)spineIds.push(m[1]);});}
+
+    var parts=[];
+    var total=spineIds.length;
+    var seenPaths=new Set();
+
+    for(var i=0;i<spineIds.length;i++){
+      document.getElementById('e2t-fill').style.width=Math.round((i+1)/total*90)+'%';
+      await tick();
+      var href=hrefMap[spineIds[i]];if(!href)continue;
+
+      // 중복 파일 처리 방지 (같은 파일이 spine에 여러번 등록된 경우)
+      var fullPath=opfBase+href;
+      if(seenPaths.has(fullPath))continue;
+      seenPaths.add(fullPath);
+
+      // zip에서 파일 찾기: fullPath, href, URL인코딩된 경로 순으로 시도
+      var entry=zip.file(fullPath)||zip.file(href);
+      if(!entry){
+        // JSZip은 내부적으로 디코딩된 경로로 저장할 수도 있음 — 직접 순회해서 찾기
+        var hrefNorm=href.replace(/\\/g,'/');
+        zip.forEach(function(zipPath,zipEntry){
+          if(!entry){
+            var zNorm=zipPath.replace(/\\/g,'/');
+            if(zNorm===hrefNorm||zNorm.endsWith('/'+hrefNorm)||
+               decodeURIComponent(zNorm)===hrefNorm||zNorm===decodeURIComponent(hrefNorm)){
+              entry=zipEntry;
+            }
+          }
+        });
+      }
+      if(!entry)continue;
+
+      var html=await entry.async('string');
+      var doc=new DOMParser().parseFromString(html,'text/html');
+      var body=doc.body||doc.documentElement;
+      var text=extractTextFromNode(body,doTitleMark);
+      if(text.trim())parts.push(text.trim());
+    }
+    document.getElementById('e2t-fill').style.width='100%';
+    var sep='\n\n'+(doSep?'──────────────────────────────────\n\n':'');
+    var result=parts.join(sep);
+    var fname=S.epub2txtData.name.replace(/\.epub$/i,'')+'.txt';
+    var blob=new Blob([result],{type:'text/plain;charset=utf-8'});
+    var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download=fname;a.click();URL.revokeObjectURL(url);
+    toast('"'+fname+'" 변환 완료 ('+parts.length+'개 섹션)','ok');
+  }catch(e){console.error(e);toast('변환 오류: '+e.message,'err');}
+  finally{btn.disabled=false;setTimeout(function(){pw.classList.remove('show');document.getElementById('e2t-fill').style.width='0%';},1200);}
+}
+
+// ═══════════════════════════════
+// EPUB 합치기
+// ═══════════════════════════════
+var BASE_CSS="body{font-family:'Noto Serif KR','Noto Serif',Georgia,serif;line-height:1.8;margin:1.4em;color:#1a1410;}p{margin:0 0 .75em;}h1,h2,h3{font-weight:600;margin:1.4em 0 .6em;}hr{border:none;border-top:1px solid #ccc;margin:2em auto;width:60%;}";
+
+function escX(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+function mkXhtml(title,content){
+  return '<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ko">\n<head>\n  <meta charset="utf-8"/>\n  <title>'+escX(title)+'</title>\n  <link rel="stylesheet" href="style.css" type="text/css"/>\n</head>\n<body>\n'+content+'\n</body>\n</html>';
+}
+
+function purgeUnusedCss(cssText,htmlContents){
+  var used=new Set();
+  htmlContents.forEach(function(html){
+    var tmp=document.createElement('div');tmp.innerHTML=html;
+    tmp.querySelectorAll('*').forEach(function(el){
+      used.add(el.tagName.toLowerCase());
+      el.classList.forEach(function(c){used.add('.'+c);});
+      if(el.id)used.add('#'+el.id);
+    });
+  });
+  var result='',ruleRe=/([^{]+)\{([^}]*)\}/g,m;
+  while((m=ruleRe.exec(cssText))!==null){
+    var sel=m[1].trim(),body=m[2].trim();
+    if(!body)continue;
+    if(sel.startsWith('@')){result+=m[0]+'\n';continue;}
+    var keep=sel.split(',').map(function(s){return s.trim();}).some(function(part){
+      var base=part.replace(/::?[\w-]+(\([^)]*\))?/g,'').replace(/[>+~\s].*/,'').trim();
+      if(!base)return true;if(used.has(base))return true;
+      var classes=base.match(/\.[a-zA-Z0-9_-]+/g)||[];
+      if(classes.some(function(c){return used.has(c);}))return true;
+      var tag=base.match(/^[a-zA-Z][a-zA-Z0-9]*/);
+      if(tag&&used.has(tag[0]))return true;return false;
+    });
+    if(keep)result+=sel+'{'+body+'}\n';
+  }
+  return result;
+}
+
+async function addEmCssFiles(fl){
+  var added=0;
+  for(var i=0;i<fl.length;i++){
+    var file=fl[i];
+    if(S.emCssFiles.find(function(f){return f.name===file.name;}))continue;
+    var content=await readText(file);
+    S.emCssFiles.push({name:file.name,content:content});added++;
+  }
+  if(added>0){renderEmCssChips();toast('스타일 파일 '+added+'개 추가','ok');}
+}
+
+function renderEmCssChips(){
+  var el=document.getElementById('em-css-chips');el.innerHTML='';
+  S.emCssFiles.forEach(function(f,i){
+    var chip=document.createElement('div');chip.className='chip';
+    chip.innerHTML='📄 '+esc(f.name)+'<button class="chip-del">✕</button>';
+    chip.querySelector('.chip-del').addEventListener('click',(function(idx){return function(){S.emCssFiles.splice(idx,1);renderEmCssChips();};})(i));
+    el.appendChild(chip);
+  });
+}
+
+async function addEmFiles(fl){
+  var rawBufs=[];
+  for(var i=0;i<fl.length;i++){
+    var file=fl[i];
+    if(/\.zip$/i.test(file.name)){
+      try{
+        var buf=await file.arrayBuffer();
+        var z=await JSZip.loadAsync(buf);
+        var entries=[];
+        z.forEach(function(path,entry){if(!entry.dir&&/\.epub$/i.test(path))entries.push({path:path,entry:entry});});
+        if(entries.length===0){toast('ZIP 안에 EPUB 파일이 없습니다','err');continue;}
+        entries.sort(function(a,b){return a.path.localeCompare(b.path,'ko',{numeric:true});});
+        for(var j=0;j<entries.length;j++){
+          var fname=entries[j].path.split('/').pop();
+          if(S.emEpubs.find(function(f){return f.name===fname;}))continue;
+          var ebuf=await entries[j].entry.async('arraybuffer');
+          rawBufs.push({name:fname,buf:ebuf});
+        }
+      }catch(e){toast('ZIP 읽기 실패: '+file.name+' — '+e.message,'err');}
+    }else if(/\.epub$/i.test(file.name)){
+      if(S.emEpubs.find(function(f){return f.name===file.name;}))continue;
+      var buf2=await file.arrayBuffer();
+      rawBufs.push({name:file.name,buf:buf2});
+    }
+  }
+  if(!rawBufs.length){toast('추가된 파일 없음','err');return;}
+  document.getElementById('em-loading').style.display='block';
+  document.getElementById('em-chapter-list').innerHTML='';
+  for(var ri=0;ri<rawBufs.length;ri++){
+    var rb=rawBufs[ri];
+    var chapters=await parseEpubChapters(rb.buf);
+    S.emEpubs.push({name:rb.name,buf:rb.buf,chapters:chapters});
+  }
+  document.getElementById('em-loading').style.display='none';
+  renderEmList();
+  var total=S.emEpubs.reduce(function(s,e){return s+e.chapters.length;},0);
+  if(S.emEpubs.length){
+    applyEmAutoTitleAuthor(S.emEpubs[0].name);
+    var lastEpub=S.emEpubs[S.emEpubs.length-1];
+    var lastChText=null;
+    if(lastEpub.chapters&&lastEpub.chapters.length){
+      var lastCh=lastEpub.chapters[lastEpub.chapters.length-1];
+      var bm=lastCh.xhtmlText&&lastCh.xhtmlText.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+      lastChText=bm?bm[1]:lastCh.xhtmlText;
+    }
+    applyEmAutoCompletion(S.emEpubs.map(function(e){return e.name;}),lastChText);
+  }
+  toast(rawBufs.length+'개 EPUB 추가 (챕터 '+total+'개)','ok');
+}
+
+async function parseEpubChapters(buf){
+  var chapters=[];
+  try{
+    var ez=await JSZip.loadAsync(buf);
+    var opfPath=null;
+    ez.forEach(function(p){if(p.endsWith('.opf'))opfPath=p;});
+    if(!opfPath)return chapters;
+    var opfBase=opfPath.split('/').slice(0,-1).join('/');if(opfBase)opfBase+='/';
+    var opfText=await ez.file(opfPath).async('string');
+    var hrefMap={},mtMap={};
+    var mItems=opfText.match(/<item[^>]+>/gi)||[];
+    mItems.forEach(function(item){
+      var idM=item.match(/id="([^"]+)"/),hrM=item.match(/href="([^"]+)"/),mtM=item.match(/media-type="([^"]+)"/);
+      if(idM&&hrM){hrefMap[idM[1]]=decodeURIComponent(hrM[1]);if(mtM)mtMap[idM[1]]=mtM[1];}
+    });
+    var spineIds=[];
+    var spM=opfText.match(/<spine[^>]*>([\s\S]*?)<\/spine>/i);
+    if(spM){var refs=spM[1].match(/<itemref[^>]+>/gi)||[];refs.forEach(function(r){var m=r.match(/idref="([^"]+)"/);if(m)spineIds.push(m[1]);});}
+    for(var si=0;si<spineIds.length;si++){
+      var href=hrefMap[spineIds[si]];if(!href)continue;
+      var mt=mtMap[spineIds[si]]||'application/xhtml+xml';
+      if(!/xhtml|html/i.test(mt))continue;
+      var fullPath=opfBase+href;
+      var entry=ez.file(fullPath)||ez.file(href);
+      if(!entry){
+        var hrefNorm=href.replace(/\\/g,'/');
+        ez.forEach(function(zipPath,zipEntry){
+          if(!entry){var zNorm=zipPath.replace(/\\/g,'/');
+            if(zNorm===hrefNorm||zNorm.endsWith('/'+hrefNorm)||decodeURIComponent(zNorm)===hrefNorm){entry=zipEntry;}}
+        });
+      }
+      if(!entry)continue;
+      var xhtmlText=await entry.async('string');
+      var titleM=xhtmlText.match(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/i);
+      var chTitle=titleM?titleM[1].replace(/<[^>]+>/g,'').trim():'';
+      if(!chTitle){var t2=xhtmlText.match(/<title[^>]*>([\s\S]*?)<\/title>/i);chTitle=t2?t2[1].replace(/<[^>]+>/g,'').trim():'';}
+      if(!chTitle)chTitle=href.split('/').pop().replace(/\.xhtml?$/i,'');
+      chapters.push({title:chTitle,href:href,fullPath:fullPath,epubZip:ez,opfBase:opfBase,mtMap:mtMap,hrefMap:hrefMap,xhtmlText:xhtmlText});
+    }
+  }catch(e){console.warn('epub parse error',e);}
+  return chapters;
+}
+
+function renderEmList(){
+  var wrap=document.getElementById('em-chapter-list');wrap.innerHTML='';
+  var totalCh=S.emEpubs.reduce(function(s,e){return s+(e.chapters?e.chapters.length:0);},0);
+  document.getElementById('em-count').textContent=S.emEpubs.length+'개 / 챕터 '+totalCh+'개';
+  if(!S.emEpubs.length){
+    wrap.innerHTML='<div style="padding:14px;text-align:center;color:var(--mu);font-size:11px;font-family:\'DM Mono\',monospace;">파일이 없습니다</div>';
+    return;
+  }
+  S.emEpubs.forEach(function(epub,ei){
+    var header=document.createElement('div');
+    header.style.cssText='display:flex;align-items:center;gap:7px;padding:6px 8px;background:var(--ac);color:#fff;border-radius:7px;margin-top:'+(ei>0?'6px':'0px')+';';
+    var kb=(epub.buf.byteLength/1024).toFixed(0);
+    header.innerHTML='<span style="font-family:\'DM Mono\',monospace;font-size:10px;opacity:.7;">'+String(ei+1).padStart(2,'0')+'</span>'
+      +'<span style="flex:1;font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+esc(epub.name)+'">'+esc(epub.name)+'</span>'
+      +'<span style="font-size:10px;opacity:.7;font-family:\'DM Mono\',monospace;">'+kb+'KB</span>';
+    var delEpub=document.createElement('button');
+    delEpub.style.cssText='background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:4px;padding:2px 7px;font-size:11px;cursor:pointer;flex-shrink:0;';
+    delEpub.textContent='삭제';
+    (function(idx){delEpub.addEventListener('click',function(){S.emEpubs.splice(idx,1);renderEmList();});})(ei);
+    header.appendChild(delEpub);
+    wrap.appendChild(header);
+    if(!epub.chapters||!epub.chapters.length){
+      var empty=document.createElement('div');
+      empty.style.cssText='padding:5px 12px;font-size:11px;color:var(--mu);font-family:\'DM Mono\',monospace;';
+      empty.textContent='챕터 없음';wrap.appendChild(empty);return;
+    }
+    epub.chapters.forEach(function(ch,ci){
+      var row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:center;gap:6px;padding:5px 8px 5px 16px;border-bottom:1px solid var(--bd);background:var(--surf);';
+      if(ci===epub.chapters.length-1)row.style.borderBottom='none';
+      var inp=document.createElement('input');
+      inp.type='text';inp.value=ch.title;
+      inp.style.cssText='flex:1;border:none;background:transparent;font-size:12px;color:var(--tx);outline:none;min-width:0;';
+      inp.addEventListener('change',function(){ch.title=this.value.trim()||ch.title;});
+      inp.addEventListener('blur',function(){ch.title=this.value.trim()||ch.title;});
+      row.appendChild(inp);
+      var del=document.createElement('button');
+      del.className='file-del';del.textContent='✕';del.title='이 챕터 제외';
+      (function(eidx,cidx){del.addEventListener('click',function(){S.emEpubs[eidx].chapters.splice(cidx,1);renderEmList();});})(ei,ci);
+      row.appendChild(del);wrap.appendChild(row);
+    });
+  });
+}
+
+function emClearAll(){
+  S.emEpubs=[];S.emCoverData=null;
+  renderEmList();
+  document.getElementById('em-cover-thumb').innerHTML='📖';
+  var t=document.getElementById('em-title'),a=document.getElementById('em-author'),c=document.getElementById('em-chk-complete');
+  if(t)delete t.dataset.userEdited;if(a)delete a.dataset.userEdited;if(c)delete c.dataset.userSet;
+  var ev=document.getElementById('em-complete-evidence');if(ev)ev.textContent='';
+}
+
+async function buildMergedEpub(){
+  if(!S.emEpubs.length){toast('EPUB 파일을 추가해주세요','err');return;}
+  var btn=document.getElementById('em-build-btn');btn.disabled=true;
+  var pw=document.getElementById('em-prog');pw.classList.add('show');
+  var pf=document.getElementById('em-prog-fill');
+  var pl=document.getElementById('em-prog-lbl');
+  function eprog(pct,lbl){pf.style.width=pct+'%';if(pl)pl.textContent=lbl||'';}
+  try{
+    var title=document.getElementById('em-title').value.trim()||'ebook_merged';
+    var author=document.getElementById('em-author').value.trim()||'';
+    var doPurge=document.getElementById('em-chk-purge').checked;
+    var userCss=S.emCssFiles.map(function(f){return f.content;}).join('\n');
+    var uid='epub-'+Date.now(),now=new Date().toISOString().replace(/\.\d+Z$/,'Z');
+    var outZip=new JSZip();
+    outZip.file('mimetype','application/epub+zip',{compression:'STORE'});
+    outZip.folder('META-INF').file('container.xml','<?xml version="1.0" encoding="UTF-8"?>\n<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">\n  <rootfiles>\n    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>\n  </rootfiles>\n</container>');
+    var ob=outZip.folder('OEBPS');
+    var allCss=BASE_CSS+'\n'+userCss;
+    ob.file('style.css',allCss);
+    var allChapters=[],allImages=[],chIdx=0,imgIdx=0;
+    eprog(5,'EPUB 파일 분석 중...');await tick();
+    for(var ei=0;ei<S.emEpubs.length;ei++){
+      var epub=S.emEpubs[ei];
+      eprog(5+Math.round(ei/S.emEpubs.length*70),'처리 중: '+epub.name);await tick();
+      if(!epub.chapters||!epub.chapters.length)continue;
+      try{
+        var ez=epub.chapters[0].epubZip;
+        var opfBase=epub.chapters[0].opfBase;
+        var mtMap2=epub.chapters[0].mtMap||{};
+        var hrefMap2=epub.chapters[0].hrefMap||{};
+        var imgRemap={};
+        Object.keys(hrefMap2).forEach(function(id){
+          var mt=mtMap2[id]||'';
+          if(/^image\//.test(mt)){
+            var origHref=hrefMap2[id]; // already decoded
+            var fullPath=opfBase+origHref;
+            var ext=origHref.split('.').pop().toLowerCase().split('?')[0];
+            var newPath='images/img_'+imgIdx+'.'+ext;
+            imgRemap[origHref]=newPath;
+            imgRemap[origHref.split('/').pop()]=newPath;
+            allImages.push({id:'mi_'+imgIdx,file:newPath,mt:mt,epubZip:ez,origPath:fullPath});
+            imgIdx++;
+          }
+        });
+        for(var ci=0;ci<epub.chapters.length;ci++){
+          var ch=epub.chapters[ci];
+          var xhtmlText=ch.xhtmlText;
+          xhtmlText=xhtmlText.replace(/(<img[^>]+src=")([^"]+)(")/gi,function(m2,pre,src,post){
+            var decoded=decodeURIComponent(src.replace(/&amp;/g,'&'));
+            var basename=decoded.split('/').pop();
+            var np=imgRemap[decoded]||imgRemap[basename];
+            return np?pre+np+post:m2;
+          });
+          var bodyM=xhtmlText.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+          var bodyContent=bodyM?bodyM[1].trim():xhtmlText;
+          var chId='ch_'+chIdx,chFile=chId+'.xhtml';
+          allChapters.push({id:chId,file:chFile,title:ch.title,content:bodyContent});
+          chIdx++;
+        }
+      }catch(e){console.warn('EPUB 처리 오류:',epub.name,e);}
+    }
+    // 간이 유효성 체크 — 병합 직전 확인
+    var warnings=validateMergedEpubBeforeBuild(allChapters,title,S.emCoverData);
+    if(warnings.length){
+      var msg='다음 사항을 확인해주세요:\n\n・'+warnings.join('\n・')+'\n\n그래도 계속 합칠까요?';
+      if(!confirm(msg)){btn.disabled=false;pw.classList.remove('show');return;}
+    }
+    var coverMfItem='',coverSpItem='',coverMeta='';
+    if(S.emCoverData){
+      var cb64=S.emCoverData.b64.split(',')[1];
+      var cbin=atob(cb64),cbts=new Uint8Array(cbin.length);
+      for(var cbi=0;cbi<cbin.length;cbi++)cbts[cbi]=cbin.charCodeAt(cbi);
+      ob.file('cover.'+S.emCoverData.ext,cbts,{binary:true});
+      ob.file('cover.xhtml','<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">\n<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ko">\n<head><meta charset="utf-8"/><title>Cover</title></head>\n<body style="margin:0;padding:0;text-align:center;"><img src="cover.'+S.emCoverData.ext+'" style="max-width:100%;height:auto;" alt=""/></body>\n</html>');
+      coverMfItem='    <item id="cover-img" href="cover.'+S.emCoverData.ext+'" media-type="'+S.emCoverData.mt+'" properties="cover-image"/>\n    <item id="cover-page" href="cover.xhtml" media-type="application/xhtml+xml"/>\n';
+      coverSpItem='    <itemref idref="cover-page"/>\n';
+      coverMeta='\n    <meta name="cover" content="cover-img"/>';
+    }
+    eprog(78,'이미지 패키징...');await tick();
+    var imgMfItems='';
+    for(var ii=0;ii<allImages.length;ii++){
+      var img=allImages[ii];
+      try{
+        var ibytes=await img.epubZip.file(img.origPath).async('uint8array');
+        ob.file(img.file,ibytes);
+        imgMfItems+='    <item id="'+img.id+'" href="'+img.file+'" media-type="'+img.mt+'"/>\n';
+      }catch(e){}
+    }
+    eprog(85,'XHTML 생성...');await tick();
+    allChapters.forEach(function(ch){ob.file(ch.file,mkXhtml(ch.title,ch.content));});
+    var navLi=allChapters.map(function(ch){return '      <li><a href="'+ch.file+'">'+escX(ch.title)+'</a></li>';}).join('\n');
+    ob.file('nav.xhtml','<?xml version="1.0" encoding="utf-8"?>\n<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="ko">\n<head><meta charset="utf-8"/><title>목차</title></head>\n<body>\n  <nav epub:type="toc">\n    <ol>\n'+navLi+'\n    </ol>\n  </nav>\n</body>\n</html>');
+    var ncxPts=allChapters.map(function(ch,pi){return '    <navPoint id="np'+pi+'" playOrder="'+(pi+1)+'">\n      <navLabel><text>'+escX(ch.title)+'</text></navLabel>\n      <content src="'+ch.file+'"/>\n    </navPoint>';}).join('\n');
+    ob.file('toc.ncx','<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">\n<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">\n  <head><meta name="dtb:uid" content="'+uid+'"/></head>\n  <docTitle><text>'+escX(title)+'</text></docTitle>\n  <navMap>\n'+ncxPts+'\n  </navMap>\n</ncx>');
+    var mfI=coverMfItem+imgMfItems+'    <item id="style" href="style.css" media-type="text/css"/>\n    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>\n    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n'+allChapters.map(function(ch){return '    <item id="'+ch.id+'" href="'+ch.file+'" media-type="application/xhtml+xml"/>';}).join('\n');
+    var spI=coverSpItem+allChapters.map(function(ch){return '    <itemref idref="'+ch.id+'"/>';}).join('\n');
+    ob.file('content.opf','<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">\n  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n    <dc:identifier id="uid">'+uid+'</dc:identifier>\n    <dc:title>'+escX(title)+'</dc:title>\n    <dc:creator>'+escX(author)+'</dc:creator>\n    <dc:language>ko</dc:language>\n    <meta property="dcterms:modified">'+now+'</meta>'+coverMeta+'\n  </metadata>\n  <manifest>\n'+mfI+'\n  </manifest>\n  <spine toc="ncx">\n'+spI+'\n  </spine>\n</package>');
+    eprog(94,'압축 중...');await tick();
+    if(doPurge)ob.file('style.css',purgeUnusedCss(allCss,allChapters.map(function(ch){return ch.content;})));
+    var blob=await outZip.generateAsync({type:'blob',mimeType:'application/epub+zip',compression:'DEFLATE',compressionOptions:{level:9}});
+    eprog(100,'완료!');
+    var outName=title+(document.getElementById('em-chk-complete').checked?' (완)':'');
+    var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download=outName+'.epub';a.click();URL.revokeObjectURL(url);
+    toast('"'+outName+'.epub" 합치기 완료 ('+allChapters.length+'챕터)','ok');
+  }catch(e){console.error(e);toast('오류: '+e.message,'err');}
+  finally{btn.disabled=false;setTimeout(function(){pw.classList.remove('show');pf.style.width='0%';},1200);}
+}
+
+// ═══════════════════════════════
+// 이벤트 바인딩
+// ═══════════════════════════════
+(function(){
+  // EPUB 합치기
+  var emDz=document.getElementById('em-drop-area');
+  emDz.addEventListener('dragover',function(e){e.preventDefault();emDz.classList.add('drag-over');});
+  emDz.addEventListener('dragleave',function(){emDz.classList.remove('drag-over');});
+  emDz.addEventListener('drop',async function(e){e.preventDefault();e.stopPropagation();emDz.classList.remove('drag-over');await addEmFiles(e.dataTransfer.files);});
+  document.getElementById('em-file-input').addEventListener('change',async function(e){await addEmFiles(e.target.files);e.target.value='';});
+  document.getElementById('em-css-input').addEventListener('change',async function(e){await addEmCssFiles(e.target.files);e.target.value='';});
+  document.getElementById('em-cover-input').addEventListener('change',function(e){
+    var file=e.target.files[0];if(!file)return;
+    var r=new FileReader();
+    r.onload=function(ev){
+      var b64=ev.target.result;var mt=file.type||'image/jpeg';
+      var ext=mt.includes('png')?'png':mt.includes('gif')?'gif':mt.includes('webp')?'webp':'jpg';
+      S.emCoverData={b64:b64,ext:ext,mt:mt};
+      document.getElementById('em-cover-thumb').innerHTML='<img src="'+b64+'" style="width:100%;height:100%;object-fit:cover;border-radius:7px;" alt=""/>';
+      toast('표지 설정됨','ok');
+    };r.readAsDataURL(file);e.target.value='';
+  });
+
+  // TXT 합치기
+  var tmDz=document.getElementById('tm-drop-area');
+  tmDz.addEventListener('dragover',function(e){e.preventDefault();tmDz.classList.add('drag-over');});
+  tmDz.addEventListener('dragleave',function(){tmDz.classList.remove('drag-over');});
+  tmDz.addEventListener('drop',async function(e){e.preventDefault();e.stopPropagation();tmDz.classList.remove('drag-over');await tmAddFiles(e.dataTransfer.files);});
+  document.getElementById('tm-file-input').addEventListener('change',async function(e){await tmAddFiles(e.target.files);e.target.value='';});
+
+  // EPUB→TXT
+  var e2d=document.getElementById('epub2txt-drop');
+  e2d.addEventListener('dragover',function(ev){ev.preventDefault();e2d.classList.add('drag-over');});
+  e2d.addEventListener('dragleave',function(){e2d.classList.remove('drag-over');});
+  e2d.addEventListener('drop',async function(ev){ev.preventDefault();ev.stopPropagation();e2d.classList.remove('drag-over');if(ev.dataTransfer.files[0])loadEpubForConvert(ev.dataTransfer.files[0]);});
+  document.getElementById('epub2txt-input').addEventListener('change',function(e){if(e.target.files[0])loadEpubForConvert(e.target.files[0]);e.target.value='';});
+
+  // 전역 드롭
+  window.addEventListener('dragover',function(e){e.preventDefault();});
+  window.addEventListener('drop',async function(e){
+    e.preventDefault();
+    var files=[].slice.call(e.dataTransfer.files);
+    var activeTab=document.querySelector('.tab-page.active');
+    if(activeTab&&activeTab.id==='tab-epub2txt'){
+      var epubs=files.filter(function(f){return /\.epub$/i.test(f.name);});
+      if(epubs.length)loadEpubForConvert(epubs[0]);
+    }else if(activeTab&&activeTab.id==='tab-txt-merge'){
+      await tmAddFiles(files);
+    }else{
+      await addEmFiles(files);
+    }
+  });
+})();
+
+renderEmList();
+</script>
+</body>
+</html>

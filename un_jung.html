@@ -1,0 +1,1990 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>TXT → EPUB</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
+:root{--bg:#e8f0f8;--surf:#ffffff;--s2:#f0f5fb;--bd:#c0d4ea;--ac:#1a5fa8;--acl:#ddeeff;--acd:#134a86;--tx:#0d1f35;--mu:#5a7a9a;--ok:#1a8c5a;--wn:#b06010;--er:#b02020;--r:10px;--sh:0 2px 8px rgba(26,95,168,.10);}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{background:var(--bg);color:var(--tx);font-family:'Noto Sans KR',sans-serif;font-size:14px;min-height:100vh;padding-bottom:80px;-webkit-text-size-adjust:100%;}
+header{background:linear-gradient(135deg,#1a5fa8 0%,#2478cc 100%);padding:14px 18px 12px;display:flex;align-items:center;position:sticky;top:0;z-index:60;box-shadow:0 2px 10px rgba(26,95,168,.25);}
+.logo{font-family:'DM Mono',monospace;font-size:15px;font-weight:500;color:#fff;letter-spacing:.08em;flex:1;}
+.logo span{opacity:.6;}
+.hbadge{background:rgba(255,255,255,.18);color:#fff;font-family:'DM Mono',monospace;font-size:10px;padding:3px 9px;border-radius:20px;letter-spacing:.05em;white-space:nowrap;}
+.main{max-width:600px;margin:0 auto;padding:16px 14px;display:flex;flex-direction:column;gap:12px;}
+.card{background:var(--surf);border:1px solid var(--bd);border-radius:var(--r);padding:16px;box-shadow:var(--sh);}
+.card-hd{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--mu);margin-bottom:12px;display:flex;align-items:center;gap:7px;}
+.snum{background:var(--ac);color:#fff;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;}
+.fpick{display:block;cursor:pointer;-webkit-user-select:none;user-select:none;}
+.fpick input[type=file]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;}
+.fface{border:2px dashed var(--bd);border-radius:var(--r);padding:26px 16px;text-align:center;transition:border-color .2s,background .2s;background:var(--s2);}
+.fpick:active .fface{border-color:var(--ac);background:var(--acl);}
+.ficon{font-size:30px;line-height:1;margin-bottom:6px;}
+.fhint{color:var(--mu);font-size:13px;}
+.fhint b{color:var(--ac);}
+.badge-ok{display:none;margin-top:10px;padding:8px 12px;background:#e4f4ed;border:1px solid #a0d4b8;border-radius:8px;font-size:12px;color:var(--ok);font-family:'DM Mono',monospace;white-space:pre-line;line-height:1.6;}
+.ch-meta{font-size:12px;color:var(--mu);margin-bottom:8px;font-family:'DM Mono',monospace;}
+.ch-meta b{color:var(--ac);}
+.ch-toolbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;}
+.ch-list{border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;max-height:300px;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--s2);}
+.ch-list:empty::before{content:'TXT 파일을 불러오면 목차가 표시됩니다';display:block;padding:20px;text-align:center;color:var(--mu);font-size:12px;}
+.chi{display:flex;align-items:stretch;border-bottom:1px solid var(--bd);background:var(--surf);user-select:none;}
+.chi:last-child{border-bottom:none;}
+.chi.exc{background:#f8f8f8;}
+.chi.exc .chn,.chi.exc .cht{opacity:.35;text-decoration:line-through;}
+.chi.dov{border-top:2px solid var(--ac);background:var(--acl);}
+.chi.drg{opacity:.35;}
+.chhand{display:flex;align-items:center;padding:0 10px;color:var(--mu);font-size:17px;opacity:.45;cursor:grab;touch-action:none;flex-shrink:0;}
+.chbody{flex:1;display:flex;align-items:center;gap:8px;padding:9px 6px 9px 0;min-width:0;}
+.chn{color:var(--ac);font-family:'DM Mono',monospace;font-size:11px;min-width:34px;flex-shrink:0;}
+.cht{color:var(--tx);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;}
+.chtog{background:none;border:none;cursor:pointer;color:var(--mu);font-size:16px;width:34px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:4px;border-radius:6px;padding:6px;}
+.chtog:active{background:var(--s2);}
+.chi.exc .chtog{color:var(--ok);}
+.chi.miss{background:#fffbf0;}
+.miss-num{color:var(--wn)!important;}
+.miss-ttl{color:var(--wn)!important;font-weight:500;}
+.miss-badge{font-size:10px;background:#fff0cc;color:var(--wn);border:1px solid #e0c060;border-radius:4px;padding:1px 6px;white-space:nowrap;flex-shrink:0;margin-right:4px;}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:10px;}
+.field:last-child{margin-bottom:0;}
+.field label{font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--mu);}
+.field input[type=text]{background:var(--s2);border:1.5px solid var(--bd);border-radius:8px;color:var(--tx);font-family:'Noto Sans KR',sans-serif;font-size:14px;padding:11px 12px;outline:none;width:100%;-webkit-appearance:none;transition:border-color .18s;}
+.field input:focus{border-color:var(--ac);}
+.color-row{display:flex;align-items:center;gap:8px;}
+.color-row input[type=color]{width:42px;height:38px;padding:3px;cursor:pointer;border:1.5px solid var(--bd);border-radius:8px;background:var(--s2);flex-shrink:0;}
+.complete-row{display:flex;align-items:center;gap:8px;background:var(--s2);border:1.5px solid var(--bd);border-radius:8px;padding:11px 12px;height:38px;box-sizing:border-box;}
+.complete-row label{font-size:13px;font-weight:500;color:var(--tx);cursor:pointer;display:flex;align-items:center;gap:7px;user-select:none;white-space:nowrap;}
+.complete-row input[type=checkbox]{width:16px;height:16px;accent-color:var(--ac);cursor:pointer;flex-shrink:0;}
+.filename-preview{background:var(--s2);border:1px solid var(--bd);border-radius:7px;padding:8px 11px;font-family:'DM Mono',monospace;font-size:11px;color:var(--ac);margin-bottom:10px;word-break:break-all;letter-spacing:.01em;}
+.filename-preview .fn-label{font-size:9px;color:var(--mu);letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px;}
+.chex{background:var(--s2);border:1.5px solid var(--bd);border-radius:8px;color:var(--tx);font-family:'DM Mono',monospace;font-size:13px;padding:11px 12px;flex:1;outline:none;transition:border-color .18s;}
+.chex:focus{border-color:var(--ac);}
+.cover-row{display:flex;gap:12px;align-items:flex-start;}
+.cthumb{width:76px;height:108px;border:1.5px dashed var(--bd);border-radius:8px;background:var(--s2);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;overflow:hidden;}
+.cthumb img{width:100%;height:100%;object-fit:cover;}
+.cactions{flex:1;display:flex;flex-direction:column;gap:7px;}
+.cactions .fface{padding:10px 12px;}
+.tog-row{display:flex;align-items:center;justify-content:space-between;padding:3px 0;}
+.tog-info .tl{font-size:13px;color:var(--tx);font-weight:500;}
+.tog-info .td{font-size:11px;color:var(--mu);margin-top:2px;font-family:'DM Mono',monospace;}
+.tog{position:relative;width:44px;height:26px;flex-shrink:0;}
+.tog input{opacity:0;width:0;height:0;}
+.tog-sl{position:absolute;inset:0;background:#c8d8e8;border-radius:26px;cursor:pointer;transition:background .2s;}
+.tog-sl::before{content:'';position:absolute;width:20px;height:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 4px rgba(0,0,0,.18);}
+.tog input:checked+.tog-sl{background:var(--ac);}
+.tog input:checked+.tog-sl::before{transform:translateX(18px);}
+hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
+.btn{font-family:'Noto Sans KR',sans-serif;font-size:13px;font-weight:500;padding:10px 14px;border-radius:8px;border:1.5px solid var(--bd);background:var(--s2);color:var(--tx);cursor:pointer;text-align:center;transition:all .18s;width:100%;display:block;-webkit-appearance:none;}
+.btn:active{opacity:.75;}
+.btn-sm{padding:8px 12px;font-size:12px;}
+.btn-p{background:var(--ac);color:#fff;border-color:var(--ac);font-size:15px;font-weight:600;padding:14px;letter-spacing:.02em;}
+.btn-p:active{background:var(--acd);}
+.btn-p:disabled{opacity:.4;cursor:not-allowed;}
+.btn-d{color:var(--er);border-color:#e0b8b8;}
+.btn-d:active{background:#fdecea;}
+.prog-wrap{display:none;margin-top:10px;}
+.prog-track{height:5px;background:var(--bd);border-radius:5px;overflow:hidden;}
+.prog-fill{height:100%;background:linear-gradient(90deg,var(--ac),#50a0e8);width:0;transition:width .3s;border-radius:5px;}
+.prog-lbl{font-family:'DM Mono',monospace;font-size:11px;color:var(--mu);text-align:center;margin-top:5px;}
+.mov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;align-items:center;justify-content:center;}
+.mov.open{display:flex;}
+.modal{background:var(--surf);border-radius:var(--r);padding:24px 20px;max-width:320px;width:calc(100% - 40px);box-shadow:0 8px 32px rgba(0,0,0,.2);}
+.modal h3{font-size:15px;margin-bottom:8px;}
+.modal p{font-size:13px;color:var(--mu);margin-bottom:18px;line-height:1.6;}
+.mbtns{display:flex;gap:8px;}
+.mbtns .btn{flex:1;}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(16px);background:#1a2d45;color:#fff;padding:11px 22px;border-radius:22px;font-size:13px;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap;z-index:300;max-width:calc(100vw - 40px);text-align:center;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast.ok{background:var(--ok);}
+.toast.err{background:var(--er);}
+.toast.wrn{background:var(--wn);}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-thumb{background:var(--bd);border-radius:4px;}
+.slider-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:3px 0;}
+.rng{-webkit-appearance:none;appearance:none;width:130px;height:4px;border-radius:4px;background:var(--bd);outline:none;flex-shrink:0;}
+.rng::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:20px;border-radius:50%;background:var(--ac);cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.2);}
+.rng::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:var(--ac);cursor:pointer;border:none;}
+/* TAB */
+.tab-nav{display:flex;background:var(--surf);border-bottom:2px solid var(--bd);position:sticky;top:48px;z-index:50;box-shadow:0 1px 4px rgba(26,95,168,.07);}
+.tab-btn{flex:1;padding:11px 4px;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--mu);background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;transition:color .18s,border-color .18s;-webkit-tap-highlight-color:transparent;}
+.tab-btn.active{color:var(--ac);border-bottom-color:var(--ac);font-weight:700;}
+.tab-pane{display:none;}
+.tab-pane.active{display:block;}
+/* EPUB EDITOR */
+.ep-main{max-width:600px;margin:0 auto;padding:16px 14px;display:flex;flex-direction:column;gap:12px;}
+.ep-section{background:var(--s2);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:9px;}
+.ep-sec-title{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--mu);padding-bottom:4px;border-bottom:1px solid var(--bd);margin-bottom:2px;}
+.ep-row{display:flex;align-items:center;gap:8px;}
+.ep-lbl{font-size:11px;font-family:'DM Mono',monospace;color:var(--mu);white-space:nowrap;min-width:72px;}
+.ep-rng{-webkit-appearance:none;appearance:none;flex:1;min-width:70px;height:4px;border-radius:4px;background:var(--bd);outline:none;}
+.ep-rng::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;border-radius:50%;background:var(--ac);cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.2);}
+.ep-rng::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--ac);cursor:pointer;border:none;}
+.ep-val{font-size:11px;font-family:'DM Mono',monospace;color:var(--mu);min-width:36px;text-align:right;flex-shrink:0;}
+.num-input{width:50px;flex-shrink:0;background:var(--s2);border:1.5px solid var(--bd);border-radius:6px;color:var(--tx);font-family:'DM Mono',monospace;font-size:12px;padding:4px 2px;text-align:center;outline:none;-moz-appearance:textfield;}
+.num-input::-webkit-outer-spin-button,.num-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+.num-input:focus{border-color:var(--ac);}
+.ep-color{width:32px;height:28px;border:1.5px solid var(--bd);border-radius:6px;cursor:pointer;padding:2px;background:var(--s2);flex-shrink:0;}
+.ep-ck-row{display:flex;align-items:center;gap:8px;padding:2px 0;}
+.ep-ck-row input[type=checkbox]{width:16px;height:16px;accent-color:var(--ac);cursor:pointer;flex-shrink:0;}
+.ep-ck-row label{font-size:13px;color:var(--tx);cursor:pointer;font-weight:500;}
+.ep-default-badge{display:inline-block;font-size:10px;font-family:'DM Mono',monospace;color:var(--mu);background:var(--bd);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle;}
+/* SPLIT RESULT */
+.split-info{background:#e8f4ee;border:1px solid #a0d4b8;border-radius:8px;padding:10px 12px;font-size:12px;color:var(--ok);font-family:'DM Mono',monospace;line-height:1.7;display:none;}
+.split-warn{background:#fff8e8;border:1px solid #e0c060;border-radius:8px;padding:10px 12px;font-size:12px;color:var(--wn);font-family:'DM Mono',monospace;line-height:1.7;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">txt <span>→</span> epub</div>
+  <div class="hbadge">Safari에서 열어주세요</div>
+</header>
+
+<div class="tab-nav">
+  <button class="tab-btn active" id="tabBtnConvert" onclick="switchTab('convert')">✦ TXT → EPUB</button>
+  <button class="tab-btn" id="tabBtnEdit" onclick="switchTab('edit')">✦ EPUB 수정</button>
+</div>
+
+<!-- ══════════ TXT→EPUB 탭 ══════════ -->
+<div id="tabConvert" class="tab-pane active">
+<div class="main">
+
+<div class="card">
+  <div class="card-hd"><span class="snum">1</span>TXT 파일 선택</div>
+  <label class="fpick" id="lblTxt">
+    <input type="file" accept=".txt" id="fileTxt">
+    <div class="fface" id="txtDropZone">
+      <div class="ficon">📄</div>
+      <div class="fhint">여기를 탭하거나 <b>TXT 파일</b>을 끌어다 놓으세요</div>
+    </div>
+  </label>
+  <div class="badge-ok" id="badgeOk"></div>
+  <button class="btn btn-sm" style="width:100%;margin-top:8px;" onclick="togglePasteBox2()">✏️ 붙여넣기로 추가</button>
+  <div id="paste-box2" style="display:none;margin-top:8px;flex-direction:column;gap:7px;">
+    <textarea id="paste-area2" placeholder="개발자도구에서 복사한 코드나 TXT 내용을 여기에 붙여넣으세요. 여러 회차를 한꺼번에 붙여넣으면 자동으로 회차별로 나눠집니다." style="width:100%;min-height:140px;background:var(--s2);border:1.5px solid var(--bd);border-radius:8px;padding:10px;font-family:'Noto Sans KR',sans-serif;font-size:13px;color:var(--tx);resize:vertical;outline:none;"></textarea>
+    <button class="btn" id="btnPasteAdd" style="width:100%;background:var(--ac);color:#fff;border-color:var(--ac);">추가하기</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-hd"><span class="snum">2</span>챕터 편집</div>
+  <div class="ch-meta" id="chMeta"><b>0</b>개 챕터 · <b>0</b>개 포함</div>
+  <div class="ch-toolbar">
+    <button class="btn btn-sm" id="btnAll">전체 포함</button>
+    <button class="btn btn-sm" id="btnNone">전체 제외</button>
+    <button class="btn btn-sm" id="btnReset">순서 초기화</button>
+  </div>
+  <div class="ch-list" id="chList"></div>
+</div>
+
+<div class="card">
+  <div class="card-hd"><span class="snum">3</span>책 정보</div>
+  <div class="field"><label>제목</label><input type="text" id="inTitle" placeholder="작품 제목" oninput="this.dataset.userEdited='1';updateFilenamePreview()"></div>
+  <div class="field"><label>작가</label><input type="text" id="inAuthor" placeholder="작가 이름" oninput="this.dataset.userEdited='1';updateFilenamePreview()"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+    <div class="field" style="margin-bottom:0;"><label>회차</label><input type="text" id="inEpisode" placeholder="예) 1, 12, 외전1" oninput="updateFilenamePreview()"></div>
+    <div style="display:flex;flex-direction:column;gap:5px;">
+      <label style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--mu);">완결</label>
+      <div class="complete-row">
+        <label><input type="checkbox" id="chkComplete" onchange="this.dataset.userSet='1';updateFilenamePreview()"> 완결작</label>
+      </div>
+      <div id="completeEvidence" style="font-size:10px;color:var(--mu);font-family:'DM Mono',monospace;"></div>
+    </div>
+  </div>
+  <div class="filename-preview" id="filenamePreviewBox">
+    <div class="fn-label">저장 파일명 미리보기</div>
+    <div id="filenamePreviewText" style="color:var(--mu);">정보를 입력하면 자동 생성됩니다</div>
+  </div>
+  <div class="field">
+    <label>챕터 제목 색상</label>
+    <div class="color-row">
+      <input type="color" id="colorPick" value="#1a5fa8">
+      <input type="text" class="chex" id="colorHex" value="#1a5fa8" maxlength="7">
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-hd"><span class="snum">4</span>표지 이미지</div>
+  <div class="cover-row">
+    <div class="cthumb" id="cthumb">📖</div>
+    <div class="cactions">
+      <label class="fpick" id="lblImg">
+        <input type="file" accept="image/*" id="fileImg">
+        <div class="fface" style="padding:10px 12px;"><div class="fhint"><b>이미지 파일</b> 선택</div></div>
+      </label>
+      <button class="btn btn-sm" id="btnCoverSearch">🔍 표지 구글 검색</button>
+      <button class="btn btn-sm btn-d" id="btnClearCover">표지 제거</button>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-hd"><span class="snum">5</span>옵션</div>
+  <div style="display:flex;flex-direction:column;gap:10px;">
+    <div class="tog-row">
+      <div class="tog-info"><div class="tl">빈 줄 자동 정리</div><div class="td">연속 빈 줄 → 1개로 통일</div></div>
+      <label class="tog"><input type="checkbox" id="togBlank" checked><span class="tog-sl"></span></label>
+    </div>
+    <hr class="div">
+    <div class="tog-row">
+      <div class="tog-info"><div class="tl">첫 줄 들여쓰기</div><div class="td">각 문단 첫 글자 자동 들여쓰기</div></div>
+      <label class="tog"><input type="checkbox" id="togIndent" checked><span class="tog-sl"></span></label>
+    </div>
+    <hr class="div">
+    <div class="tog-row">
+      <div class="tog-info"><div class="tl">괄호 주석 스타일</div><div class="td">( ) 안 텍스트 작게 회색으로</div></div>
+      <label class="tog"><input type="checkbox" id="togComment" checked><span class="tog-sl"></span></label>
+    </div>
+    <div id="commentOptions" style="display:flex;flex-direction:column;gap:10px;padding:4px 0 4px;">
+      <div class="slider-row">
+        <div class="tog-info"><div class="tl">괄호 주석 폰트 크기</div><div class="td">font-size: <b id="lblCommentFS">83</b>%</div></div>
+        <input type="range" id="commentFS" min="60" max="100" step="1" value="83" class="rng">
+        <input type="number" id="commentFSNum" min="60" max="100" step="1" value="83" class="num-input">
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <label style="font-size:11px;font-family:'DM Mono',monospace;color:var(--mu);white-space:nowrap;">글자색 (라이트)</label>
+        <input type="color" id="commentColorPick" value="#666666" style="width:32px;height:28px;border:1.5px solid var(--bd);border-radius:6px;cursor:pointer;padding:2px;">
+        <input type="text" id="commentColorHex" value="#666666" maxlength="7" style="flex:1;background:var(--s2);border:1.5px solid var(--bd);border-radius:6px;color:var(--tx);font-family:'DM Mono',monospace;font-size:12px;padding:6px 8px;outline:none;">
+      </div>
+      <div style="padding:8px 12px;background:var(--surf);border-radius:6px;border:1px solid var(--bd);">
+        <p style="margin:0;font-size:14px;line-height:1.75;color:var(--tx);">그녀는 미소를 지으며 <span id="commentPreview" style="font-size:83%;color:#666666;">(살짝 고개를 기울이며)</span> 말했다.</p>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <label style="font-size:11px;font-family:'DM Mono',monospace;color:var(--mu);white-space:nowrap;">글자색 (다크)</label>
+        <input type="color" id="commentColorPickDark" value="#aaaaaa" style="width:32px;height:28px;border:1.5px solid var(--bd);border-radius:6px;cursor:pointer;padding:2px;">
+        <input type="text" id="commentColorHexDark" value="#aaaaaa" maxlength="7" style="flex:1;background:var(--s2);border:1.5px solid var(--bd);border-radius:6px;color:var(--tx);font-family:'DM Mono',monospace;font-size:12px;padding:6px 8px;outline:none;">
+      </div>
+      <div style="padding:8px 12px;background:#1c1c1c;border-radius:6px;border:1px solid var(--bd);">
+        <p style="margin:0;font-size:14px;line-height:1.75;color:#e6e6e6;">그녀는 미소를 지으며 <span id="commentPreviewDark" style="font-size:83%;color:#aaaaaa;">(살짝 고개를 기울이며)</span> 말했다.</p>
+      </div>
+      <div style="font-size:10.5px;color:var(--mu);line-height:1.5;">※ 리더 앱이 시스템 다크모드를 인식할 때만 적용돼요 (대부분의 epub 리더가 지원)</div>
+    </div>
+    <hr class="div">
+    <div class="slider-row">
+      <div class="tog-info"><div class="tl">챕터 제목 위 여백</div><div class="td">margin-top: <b id="lblMT">3</b>em</div></div>
+      <input type="range" id="slMT" min="0" max="10" step="0.5" value="3" class="rng">
+      <input type="number" id="slMTNum" min="0" max="10" step="0.5" value="3" class="num-input">
+    </div>
+    <div class="slider-row">
+      <div class="tog-info"><div class="tl">챕터 제목 아래 여백</div><div class="td">margin-bottom: <b id="lblMB">3</b>em</div></div>
+      <input type="range" id="slMB" min="0" max="10" step="0.5" value="3" class="rng">
+      <input type="number" id="slMBNum" min="0" max="10" step="0.5" value="3" class="num-input">
+    </div>
+    <div class="slider-row">
+      <div class="tog-info"><div class="tl">챕터 제목 폰트 크기</div><div class="td">font-size: <b id="lblFS">1.15</b>em</div></div>
+      <input type="range" id="slFS" min="0.8" max="2.0" step="0.05" value="1.15" class="rng">
+      <input type="number" id="slFSNum" min="0.8" max="2.0" step="0.05" value="1.15" class="num-input">
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-hd"><span class="snum">6</span>EPUB 생성</div>
+  <button class="btn btn-p" id="btnBuild" disabled>EPUB 생성하기</button>
+  <div class="prog-wrap" id="progWrap">
+    <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+    <div class="prog-lbl" id="progLbl"></div>
+  </div>
+</div>
+
+</div><!-- /main -->
+</div><!-- /tabConvert -->
+
+<!-- ══════════ EPUB 수정 탭 ══════════ -->
+<div id="tabEdit" class="tab-pane">
+<div class="ep-main">
+
+  <div class="card">
+    <div class="card-hd"><span class="snum">1</span>EPUB 파일 선택</div>
+    <label class="fpick" id="lblEpub">
+      <input type="file" accept=".epub" id="fileEpub">
+      <div class="fface" id="epubDropZone">
+        <div class="ficon">📚</div>
+        <div class="fhint">여기를 탭하거나 <b>EPUB 파일</b>을 끌어다 놓으세요</div>
+      </div>
+    </label>
+    <div class="badge-ok" id="epubBadge"></div>
+  </div>
+
+  <!-- ★ 표지 비율 수정 -->
+  <div class="card">
+    <div class="card-hd"><span class="snum">2</span>표지 비율 수정</div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <p style="font-size:12px;color:var(--mu);line-height:1.6;">표지 이미지가 세로로 늘어나 보일 때 사용하세요.<br>SVG의 <code style="font-family:'DM Mono',monospace;background:var(--s2);padding:1px 5px;border-radius:4px;">preserveAspectRatio</code>를 <b>none → meet</b>으로 수정합니다.</p>
+      <div class="ep-ck-row">
+        <input type="checkbox" id="ckCoverFix" checked>
+        <label for="ckCoverFix">표지 비율 자동 보정 적용</label>
+      </div>
+      <div id="coverFixOptions" style="display:flex;flex-direction:column;gap:8px;padding:4px 0;">
+        <div style="font-size:11px;font-family:'DM Mono',monospace;color:var(--mu);margin-bottom:2px;">정렬 방식</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"><input type="radio" name="coverAR" value="xMidYMid meet" checked style="accent-color:var(--ac);">가운데 맞춤 (권장)</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"><input type="radio" name="coverAR" value="xMidYMid slice" style="accent-color:var(--ac);">화면 꽉 채움</label>
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"><input type="radio" name="coverAR" value="none" style="accent-color:var(--ac);">늘리기 (원본 유지)</label>
+        </div>
+        <p style="font-size:11px;color:var(--mu);line-height:1.5;font-family:'DM Mono',monospace;">titlepage.xhtml의 SVG와 cover.xhtml 이미지 스타일도 함께 수정됩니다.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ★ 회차별 HTML 분리 -->
+  <div class="card">
+    <div class="card-hd"><span class="snum">3</span>회차별 HTML 분리</div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <p style="font-size:12px;color:var(--mu);line-height:1.6;">하나의 HTML 파일에 여러 회차가 묶인 경우, 회차별로 분리합니다.<br>목차(toc.ncx)의 챕터 정보를 기준으로 자동 분리됩니다.</p>
+      <div class="ep-ck-row">
+        <input type="checkbox" id="ckSplit">
+        <label for="ckSplit">회차별 HTML 분리 적용</label>
+      </div>
+      <div id="splitOptions" style="display:none;flex-direction:column;gap:8px;padding:4px 0;">
+        <div class="split-warn">⚠ 분리 후 파일 수가 많아질 수 있습니다. 분리 전 원본을 백업하세요.</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+          <span class="ep-lbl" style="min-width:80px;">챕터 태그</span>
+          <select id="splitTagSel" style="flex:1;background:var(--s2);border:1.5px solid var(--bd);border-radius:8px;color:var(--tx);font-family:'DM Mono',monospace;font-size:12px;padding:8px 10px;outline:none;">
+            <option value="auto">자동 감지 (h1/h2/h3 순서대로)</option>
+            <option value="h1">h1</option>
+            <option value="h2">h2 (일반적)</option>
+            <option value="h3">h3</option>
+          </select>
+        </div>
+        <div id="splitPreviewBox" style="display:none;background:var(--s2);border:1px solid var(--bd);border-radius:8px;padding:10px 12px;">
+          <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--mu);margin-bottom:6px;letter-spacing:.1em;">분리 미리보기</div>
+          <div id="splitPreviewList" style="font-size:12px;color:var(--tx);line-height:1.8;max-height:160px;overflow-y:auto;"></div>
+        </div>
+        <div class="split-info" id="splitInfo"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CSS 수정 (기존 snum 변경) -->
+  <div class="card">
+    <div class="card-hd"><span class="snum">4</span>CSS 수정</div>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+
+      <!-- ① 본문 기본 CSS — 체크 시 슬라이더 노출 -->
+      <div class="ep-section">
+        <div class="ep-sec-title">본문 기본</div>
+        <div class="ep-ck-row">
+          <input type="checkbox" id="ckBody">
+          <label for="ckBody">직접 수정하기</label>
+          <span class="ep-default-badge" id="bodyDefaultBadge">미체크 = 원본 값 유지</span>
+        </div>
+        <div id="bodyControls" style="display:none;flex-direction:column;gap:9px;margin-top:6px;">
+          <div class="ep-row">
+            <span class="ep-lbl">좌우 마진</span>
+            <input type="range" id="epBodyMargin" min="0" max="5" step="0.1" value="0" class="ep-rng">
+            <input type="number" id="epBodyMarginNum" min="0" max="5" step="0.1" value="0" class="num-input">
+            <span class="ep-val" id="lblEpBodyMargin">0em</span>
+          </div>
+          <div class="ep-row">
+            <span class="ep-lbl">줄 높이</span>
+            <input type="range" id="epLineHeight" min="1.2" max="2.5" step="0.05" value="1.75" class="ep-rng">
+            <input type="number" id="epLineHeightNum" min="1.2" max="2.5" step="0.05" value="1.75" class="num-input">
+            <span class="ep-val" id="lblEpLineHeight">1.75</span>
+          </div>
+          <div class="ep-row">
+            <span class="ep-lbl">문단 위 마진</span>
+            <input type="range" id="epPMarginT" min="0" max="3" step="0.1" value="0.6" class="ep-rng">
+            <input type="number" id="epPMarginTNum" min="0" max="3" step="0.1" value="0.6" class="num-input">
+            <span class="ep-val" id="lblEpPMarginT">0.6em</span>
+          </div>
+          <div class="ep-row">
+            <span class="ep-lbl">문단 아래 마진</span>
+            <input type="range" id="epPMarginB" min="0" max="3" step="0.1" value="1.4" class="ep-rng">
+            <input type="number" id="epPMarginBNum" min="0" max="3" step="0.1" value="1.4" class="num-input">
+            <span class="ep-val" id="lblEpPMarginB">1.4em</span>
+          </div>
+          <div style="padding:8px 12px;background:var(--surf);border-radius:6px;border:1px solid var(--bd);">
+            <p id="epBodyPreview" style="font-size:13px;line-height:1.75;color:#222;margin:0.6em 0em 1.4em;">가나다라마바사 아자차카타파하 일이삼사오육칠팔구십 가나다라마바사 아자차카타파하</p>
+            <p id="epBodyPreview2" style="font-size:13px;line-height:1.75;color:#222;margin:0.6em 0em 1.4em;">두 번째 문단입니다. 문단 사이 간격을 여기서 확인하세요.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ② 챕터 제목 h3 -->
+      <div class="ep-section">
+        <div class="ep-sec-title">챕터 제목 (h1~h4 자동 감지)</div>
+        <!-- 색상 체크박스 -->
+        <div class="ep-ck-row">
+          <input type="checkbox" id="ckH3Color">
+          <label for="ckH3Color">색상 직접 지정</label>
+          <span class="ep-default-badge" id="h3ColorBadge">원본 색상 유지</span>
+        </div>
+        <div id="h3ColorControls" style="display:none;margin-top:4px;">
+          <div class="ep-row">
+            <span class="ep-lbl">색상</span>
+            <input type="color" id="epH3Color" value="#1a5fa8" class="ep-color">
+            <input type="text" id="epH3ColorHex" value="#1a5fa8" maxlength="7" style="flex:1;background:var(--s2);border:1.5px solid var(--bd);border-radius:6px;color:var(--tx);font-family:'DM Mono',monospace;font-size:12px;padding:6px 8px;outline:none;">
+          </div>
+        </div>
+        <!-- 가운데 정렬 -->
+        <div class="ep-ck-row">
+          <input type="checkbox" id="ckH3Center">
+          <label for="ckH3Center">가운데 정렬</label>
+          <span class="ep-default-badge">미체크 = 원본 정렬 유지</span>
+        </div>
+        <!-- 볼드체 -->
+        <div class="ep-ck-row">
+          <input type="checkbox" id="ckH3Bold">
+          <label for="ckH3Bold">볼드체</label>
+          <span class="ep-default-badge">미체크 = 원본 굵기 유지</span>
+        </div>
+        <!-- 폰트크기·마진 체크박스 -->
+        <div class="ep-ck-row">
+          <input type="checkbox" id="ckH3Detail">
+          <label for="ckH3Detail">폰트 크기 / 마진 직접 수정</label>
+          <span class="ep-default-badge" id="h3DefaultBadge">미체크 = 원본 크기 유지</span>
+        </div>
+        <div id="h3Controls" style="display:none;flex-direction:column;gap:9px;margin-top:4px;">
+          <div class="ep-row">
+            <span class="ep-lbl">폰트 크기</span>
+            <input type="range" id="epH3FS" min="0.8" max="2.0" step="0.05" value="1.1" class="ep-rng">
+            <input type="number" id="epH3FSNum" min="0.8" max="2.0" step="0.05" value="1.1" class="num-input">
+            <span class="ep-val" id="lblEpH3FS">1.1em</span>
+          </div>
+          <div class="ep-row">
+            <span class="ep-lbl">위 여백</span>
+            <input type="range" id="epH3MT" min="0" max="12" step="0.5" value="1.5" class="ep-rng">
+            <input type="number" id="epH3MTNum" min="0" max="12" step="0.5" value="1.5" class="num-input">
+            <span class="ep-val" id="lblEpH3MT">1.5em</span>
+          </div>
+          <div class="ep-row">
+            <span class="ep-lbl">아래 여백</span>
+            <input type="range" id="epH3MB" min="0" max="12" step="0.5" value="6" class="ep-rng">
+            <input type="number" id="epH3MBNum" min="0" max="12" step="0.5" value="6" class="num-input">
+            <span class="ep-val" id="lblEpH3MB">6em</span>
+          </div>
+        </div>
+        <div style="padding:8px 12px;background:var(--surf);border-radius:6px;border:1px solid var(--bd);text-align:center;margin-top:4px;">
+          <span id="epH3Preview" style="font-size:1.1em;color:#888;font-weight:bold;">1화 제목 미리보기</span>
+        </div>
+        <p style="margin:6px 0 0;font-size:11px;color:var(--mu);line-height:1.5;">※ 카카오페이지 원본처럼 제목이 고정 높이의 박스(.chapter-header 등)에 들어있는 경우,
+          위 정렬/마진 설정을 켜면 그 박스의 충돌하는 height·padding도 함께 정리됩니다.</p>
+      </div>
+
+      <!-- ③ 장면전환 .scene -->
+      <div class="ep-section">
+        <div class="ep-sec-title">장면전환 .scene</div>
+        <!-- 색상 체크박스 -->
+        <div class="ep-ck-row">
+          <input type="checkbox" id="ckScColor">
+          <label for="ckScColor">색상 직접 지정</label>
+          <span class="ep-default-badge" id="scColorBadge">원본 색상 유지</span>
+        </div>
+        <div id="scColorControls" style="display:none;margin-top:4px;">
+          <div class="ep-row">
+            <span class="ep-lbl">색상</span>
+            <input type="color" id="epScColor" value="#1a5fa8" class="ep-color">
+            <input type="text" id="epScColorHex" value="#1a5fa8" maxlength="7" style="flex:1;background:var(--s2);border:1.5px solid var(--bd);border-radius:6px;color:var(--tx);font-family:'DM Mono',monospace;font-size:12px;padding:6px 8px;outline:none;">
+            <button type="button" id="btnScColorFromH3" title="제목(h3) 색상 가져오기" style="flex-shrink:0;background:var(--s2);border:1.5px solid var(--bd);border-radius:6px;color:var(--tx);font-size:12px;padding:6px 10px;cursor:pointer;white-space:nowrap;">↺ 제목 색상</button>
+          </div>
+        </div>
+        <!-- 가운데 정렬 -->
+        <div class="ep-ck-row">
+          <input type="checkbox" id="ckScCenter">
+          <label for="ckScCenter">가운데 정렬</label>
+          <span class="ep-default-badge">미체크 = 원본 정렬 유지</span>
+        </div>
+        <!-- 폰트크기·마진 체크박스 -->
+        <div class="ep-ck-row">
+          <input type="checkbox" id="ckScDetail">
+          <label for="ckScDetail">폰트 크기 / 마진 직접 수정</label>
+          <span class="ep-default-badge" id="scDefaultBadge">미체크 = 원본 크기 유지</span>
+        </div>
+        <div id="scControls" style="display:none;flex-direction:column;gap:9px;margin-top:4px;">
+          <div class="ep-row">
+            <span class="ep-lbl">폰트 크기</span>
+            <input type="range" id="epScFS" min="0.8" max="1.8" step="0.05" value="1.1" class="ep-rng">
+            <input type="number" id="epScFSNum" min="0.8" max="1.8" step="0.05" value="1.1" class="num-input">
+            <span class="ep-val" id="lblEpScFS">1.1em</span>
+          </div>
+          <div class="ep-row">
+            <span class="ep-lbl">위아래 여백</span>
+            <input type="range" id="epScM" min="0" max="6" step="0.25" value="2" class="ep-rng">
+            <input type="number" id="epScMNum" min="0" max="6" step="0.25" value="2" class="num-input">
+            <span class="ep-val" id="lblEpScM">2em</span>
+          </div>
+        </div>
+        <div style="padding:8px 12px;background:var(--surf);border-radius:6px;border:1px solid var(--bd);text-align:center;margin-top:4px;">
+          <span id="epScPreview" style="font-size:1.1em;color:#888;">* * *</span>
+        </div>
+      </div>
+
+      <!-- ④ 괄호 주석 .comment -->
+      <div class="ep-section">
+        <div class="ep-sec-title">괄호 주석 .comment</div>
+        <div class="ep-ck-row">
+          <input type="checkbox" id="ckComment">
+          <label for="ckComment">괄호 주석 스타일 적용</label>
+          <span class="ep-default-badge" id="commentBadge">원본 유지</span>
+        </div>
+        <div id="commentControls" style="display:none;flex-direction:column;gap:9px;margin-top:6px;">
+          <div class="ep-row">
+            <span class="ep-lbl">폰트 크기</span>
+            <input type="range" id="epCommentFS" min="60" max="100" step="1" value="83" class="ep-rng">
+            <input type="number" id="epCommentFSNum" min="60" max="100" step="1" value="83" class="num-input">
+            <span class="ep-val" id="lblEpCommentFS">83%</span>
+          </div>
+          <div class="ep-row">
+            <span class="ep-lbl">글자 색상 (라이트)</span>
+            <input type="color" id="epCommentColor" value="#666666" class="ep-color">
+            <input type="text" id="epCommentColorHex" value="#666666" maxlength="7" style="flex:1;background:var(--s2);border:1.5px solid var(--bd);border-radius:6px;color:var(--tx);font-family:'DM Mono',monospace;font-size:12px;padding:6px 8px;outline:none;">
+          </div>
+          <div style="padding:8px 12px;background:var(--surf);border-radius:6px;border:1px solid var(--bd);margin-top:2px;">
+            <p style="margin:0;font-size:13px;line-height:1.75;color:#222;">그녀는 미소를 지으며 <span id="epCommentPreview" style="font-size:83%;color:#666;">(살짝 고개를 기울이며)</span> 말했다.</p>
+          </div>
+          <div class="ep-row">
+            <span class="ep-lbl">글자 색상 (다크)</span>
+            <input type="color" id="epCommentColorDark" value="#aaaaaa" class="ep-color">
+            <input type="text" id="epCommentColorHexDark" value="#aaaaaa" maxlength="7" style="flex:1;background:var(--s2);border:1.5px solid var(--bd);border-radius:6px;color:var(--tx);font-family:'DM Mono',monospace;font-size:12px;padding:6px 8px;outline:none;">
+          </div>
+          <div style="padding:8px 12px;background:#1c1c1c;border-radius:6px;border:1px solid var(--bd);margin-top:2px;">
+            <p style="margin:0;font-size:13px;line-height:1.75;color:#e6e6e6;">그녀는 미소를 지으며 <span id="epCommentPreviewDark" style="font-size:83%;color:#aaaaaa;">(살짝 고개를 기울이며)</span> 말했다.</p>
+          </div>
+          <div style="font-size:10.5px;color:var(--mu);line-height:1.5;">※ 리더 앱이 시스템 다크모드를 인식할 때만 적용돼요</div>
+        </div>
+      </div>
+
+      <!-- ⑤ 제목 밑 구분선 hr -->
+      <div class="ep-section">
+        <div class="ep-sec-title">제목 밑 구분선 (hr)</div>
+        <div id="hrAlertBox" style="display:none;margin-bottom:8px;padding:8px 12px;background:#fff8e8;border:1px solid #e0c060;border-radius:8px;font-size:12px;color:var(--wn);line-height:1.5;">
+          ⚠ 제목 바로 아래에 구분선(&lt;hr&gt;)이 있는 것을 발견했습니다.
+        </div>
+        <div class="ep-ck-row">
+          <input type="checkbox" id="ckHrRemove">
+          <label for="ckHrRemove">제목 밑 구분선 제거</label>
+          <span class="ep-default-badge" id="hrDefaultBadge">미체크 = 원본 유지</span>
+        </div>
+      </div>
+
+      <!-- ⑥ 빈 줄(공백 단락) 간격 -->
+      <div class="ep-section">
+        <div class="ep-sec-title">빈 줄(공백 단락) 간격</div>
+        <div style="font-size:10.5px;color:var(--mu);line-height:1.5;margin-bottom:6px;">본문 중 &lt;p&gt;&lt;br/&gt;&lt;/p&gt; 형태의 빈 줄이 앞뒤 문단 마진과 겹쳐 간격이 과하게 넓어지는 경우를 정리해요.</div>
+        <div class="ep-ck-row">
+          <input type="checkbox" id="ckBlankLine">
+          <label for="ckBlankLine">빈 줄 정리</label>
+          <span class="ep-default-badge" id="blankLineBadge">미체크 = 원본 유지</span>
+        </div>
+        <div id="blankLineControls" style="display:none;flex-direction:column;gap:9px;margin-top:6px;">
+          <div class="ep-ck-row" style="gap:18px;">
+            <label style="font-size:13px;color:var(--tx);cursor:pointer;display:flex;align-items:center;gap:5px;">
+              <input type="radio" name="blankMode" id="blankModeHeight" value="height" checked style="accent-color:var(--ac);width:15px;height:15px;cursor:pointer;">높이만 조절
+            </label>
+            <label style="font-size:13px;color:var(--tx);cursor:pointer;display:flex;align-items:center;gap:5px;">
+              <input type="radio" name="blankMode" id="blankModeRemove" value="remove" style="accent-color:var(--ac);width:15px;height:15px;cursor:pointer;">완전히 제거
+            </label>
+          </div>
+          <div id="blankHeightGroup" style="display:flex;flex-direction:column;gap:9px;">
+            <div class="ep-row">
+              <span class="ep-lbl">빈 줄 높이</span>
+              <input type="range" id="epBlankH" min="0.3" max="3" step="0.1" value="1" class="ep-rng">
+              <input type="number" id="epBlankHNum" min="0.3" max="3" step="0.1" value="1" class="num-input">
+              <span class="ep-val" id="lblEpBlankH">1em</span>
+            </div>
+            <div style="padding:8px 12px;background:var(--surf);border-radius:6px;border:1px solid var(--bd);">
+              <p style="margin:0 0 1.4em;font-size:13px;line-height:1.6;color:#222;">문단 A입니다.</p>
+              <p id="epBlankPreview" style="margin:0;line-height:1em;color:#222;font-size:13px;">&nbsp;</p>
+              <p style="margin:0.6em 0 0;font-size:13px;line-height:1.6;color:#222;">문단 B입니다.</p>
+            </div>
+            <div style="font-size:10.5px;color:var(--mu);line-height:1.5;">※ 빈 줄 마진만 0으로 만든 거라, 앞뒤 문단 자체 마진(위 0.6em·아래 1.4em)이 그대로 한 번씩 더해져서 일반 문단 사이 간격(1.4em)보다는 여전히 넓어요.</div>
+          </div>
+          <div id="blankRemoveGroup" style="display:none;flex-direction:column;gap:9px;">
+            <div style="padding:8px 12px;background:var(--surf);border-radius:6px;border:1px solid var(--bd);">
+              <p style="margin:0 0 1.4em;font-size:13px;line-height:1.6;color:#222;">문단 A입니다.</p>
+              <p style="margin:0.6em 0 0;font-size:13px;line-height:1.6;color:#222;">문단 B입니다. (빈 줄 없이 일반 문단 간격만 적용)</p>
+            </div>
+            <div style="font-size:10.5px;color:var(--mu);line-height:1.5;">※ 빈 줄을 아예 삭제해서, 다른 문단 사이 간격과 완전히 동일해져요. 원작자가 의도한 '한 줄 쉼'은 사라져요.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+    <button class="btn btn-p" id="btnEpubSave" disabled>수정된 EPUB 저장하기</button>
+    <div class="prog-wrap" id="epProgWrap">
+      <div class="prog-track"><div class="prog-fill" id="epProgFill"></div></div>
+      <div class="prog-lbl" id="epProgLbl"></div>
+    </div>
+  </div>
+
+</div>
+</div><!-- /tabEdit -->
+
+<div class="mov" id="modalDup">
+  <div class="modal">
+    <h3>⚠️ 중복 회차 감지</h3>
+    <p id="modalMsg"></p>
+    <div class="mbtns">
+      <button class="btn btn-sm" id="modalKeep">기존 유지</button>
+      <button class="btn btn-sm btn-p" id="modalOver">덮어쓰기</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+var rawCh=[],chOrd=[],excl=new Set(),coverData=null,dragSrc=null;
+var CH_RE=/^(프롤로그[^\n]*|에필로그[^\n]*|후일담[^\n]*|[<\[(「【]?\s*제?\s*0*\d{1,4}\s*[화장][>\])」】]?(?=[\s\.\,\!\?\:\;\-\~\(\[\n]|$)[^\n]*|EP\.?\s*0*\d+[^\n]*|Episode\s+0*\d+[^\n]*|#\d+[^\n]*|특별외전[^\n]*|외전\s*\d*[^\n]*|외전$|번외\s*\d*\s*(?:\(\s*\d+\s*\))?[^\n]*)/igm;
+var SCENE_RE=/^\s*(\*+\s*){3,}\s*$/;
+
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function tick(){return new Promise(function(r){setTimeout(r,0);});}
+function toast(msg,type){var el=document.getElementById('toast');el.textContent=msg;el.className='toast show'+(type?' '+type:'');clearTimeout(el._t);el._t=setTimeout(function(){el.className='toast';},2800);}
+function num(t){if(/^(번외|외전|특별외전|후일담|에필로그)/i.test(t.trim()))return null;if(/^프롤로그/i.test(t.trim()))return 0;
+  // '2권 15화'처럼 권/화가 함께 있으면 화(챕터) 쪽 숫자를 우선 사용 (권 번호로 오인해 누락 오탐되는 것 방지)
+  var mUnit=t.match(/(\d+)\s*(화|장|회|편)/);if(mUnit)return parseInt(mUnit[1]);
+  var m=t.match(/\d+/);return m?parseInt(m[0]):null;}
+
+function parseCh(text){
+  var ms=Array.from(text.matchAll(CH_RE));
+  if(!ms.length)return[];
+  return ms.map(function(m,i){
+    var end=i+1<ms.length?ms[i+1].index:text.length;
+    return{title:m[0].trim(),content:text.slice(m.index+m[0].length,end).trim(),number:num(m[0])};
+  });
+}
+function clean(text,opts){
+  text=text.replace(/[\u200B-\u200F\u202F\t]+/g,'');
+  text=text.split('\n').map(function(l){return l.replace(/[ ]+/g,' ').trimEnd();}).join('\n');
+  if(opts.blank)text=text.replace(/\n{3,}/g,'\n\n');
+  return text;
+}
+
+// ─── 개발자도구로 복사한 HTML을 순수 텍스트로 변환 ──────────────────────
+// (언정 웹앱은 항상 일반 텍스트를 다루므로, class/스타일은 버리고 글자만 남긴다.
+//  「」 등의 문장부호는 글자 그대로 남아있으니 필요하면 나중에 직접 다듬으면 된다.)
+function stripHtmlToText(raw){
+  if(!raw||!raw.trim().startsWith('<'))return raw;
+  var tmp=document.createElement('div');tmp.innerHTML=raw;
+  tmp.querySelectorAll('style,script,title,meta,head,link').forEach(function(el){el.remove();});
+  // 바깥 래퍼 div(예: 카카오페이지의 DC2CN) 한 겹 벗기기 — 챕터 하나만 붙여넣은 경우
+  var unwrapGuard=0;
+  while(tmp.children.length===1&&tmp.children[0].tagName==='DIV'&&tmp.children[0].children.length>1&&unwrapGuard<5){
+    tmp.innerHTML=tmp.children[0].innerHTML;
+    unwrapGuard++;
+  }
+  tmp.querySelectorAll('br').forEach(function(br){br.replaceWith('\n');});
+  function blockText(el){
+    var blockKids=Array.from(el.children).filter(function(c){return/^(P|DIV|H1|H2|H3|H4|H5|H6|LI)$/.test(c.tagName);});
+    if(blockKids.length>0)return blockKids.map(blockText).join('\n');
+    return el.textContent.replace(/\u00A0/g,' ').trim();
+  }
+  return blockText(tmp);
+}
+function askDup(n){
+  return new Promise(function(resolve){
+    document.getElementById('modalMsg').textContent=n+'화가 두 번 감지되었습니다. 어느 쪽을 사용하시겠습니까?';
+    var ov=document.getElementById('modalDup');ov.classList.add('open');
+    document.getElementById('modalKeep').onclick=function(){ov.classList.remove('open');resolve('keep');};
+    document.getElementById('modalOver').onclick=function(){ov.classList.remove('open');resolve('over');};
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 파일명에서 제목/저자 자동 추출 (간이 버전)
+// ══════════════════════════════════════════════════════════════
+var META_TAGS='로판|현판|무협지|무협|판무|선협|판타지|로맨스|퓨전판타지|퓨전|라노벨|라이트노벨|대체역사|게임판타지|아포칼립스|아카데미|헌터물|헌터|회귀물|빙의물|환생물|시스템물|드라마|미스터리|스릴러|호러|SF|BL|GL|백합|텍본|정발|정식발매|리디북스|리디|조아라|문피아|카카오페이지|네이버시리즈|노벨피아|이북|이펍';
+function isAgeOrRatingTag(s){
+  var t=(s||'').trim();
+  return /^\d+\s*세(?:이상)?$/.test(t)||/^\d+\+?\s*금$/.test(t)||/^(청불|청소년이용불가|전체이용가|전연령|모든연령|성인전용|성인물|성인|성년|미성년|R\d+)$/i.test(t)||/^\d+\+?$/.test(t);
+}
+function detectTitleAuthorFromFilename(filename){
+  var name=String(filename||'').normalize('NFC').replace(/\.(txt|html?|xhtml|zip|epub)$/i,'');
+  name=name.replace(/^\s*[\[\(<【]?\s*(?:공유\s*금지|공금|유출\s*금지|외부\s*유출\s*금지|배포\s*금지)\s*[\]\)>】]?[_\s-]+/i,'');
+  name=name.replace(/[_\s-]+(?:공유\s*금지|공금|유출\s*금지|배포\s*금지)\s*$/i,'');
+  var tagRun='(?:'+META_TAGS+')(?:[_\\s-]+(?:'+META_TAGS+'))*';
+  name=name.replace(new RegExp('^[_\\s-]*'+tagRun+'[_\\s-]+','i'),'');
+  name=name.replace(new RegExp('[_\\s-]+'+tagRun+'\\s*$','i'),'');
+  name=name.replace(/\s*[\(\[]?\s*(?:완결|完結|끝)\s*[\)\]]?\s*$/,'').trim();
+  name=name.replace(/\s*\d+\s*(?:권|화|부|장)\s*[\(\[]?\s*(?:완결|완|完)?\s*[\)\]]?\s*$/,'').trim();
+  name=name.replace(/_/g,' ').replace(/\s+/g,' ').trim();
+  var title='',author='';
+  var bracketHead=name.match(/^\[([^\]]{1,15})\]\s*(.+)$/);
+  var bracketTail=name.match(/^(.+?)\s*\[([^\]]{1,15})\]\s*$/);
+  var dashSplit=name.match(/^(.+?)\s*-\s*([^\s]{1,12})/);
+  if(bracketHead&&!isAgeOrRatingTag(bracketHead[1])){
+    author=bracketHead[1].trim();title=bracketHead[2].trim();
+  }else if(bracketTail&&!isAgeOrRatingTag(bracketTail[2])){
+    author=bracketTail[2].trim();title=bracketTail[1].trim();
+  }else if(dashSplit&&!isAgeOrRatingTag(dashSplit[2])&&!/^\d+$/.test(dashSplit[2].trim())){
+    title=dashSplit[1].trim();author=dashSplit[2].trim();
+  }else{
+    title=name;
+  }
+  title=title.replace(/\s*\d+\s*(?:권|화|부|장)\s*(?:완결|완|完)?\s*$/,'').trim();
+  title=title.replace(/\s*[-~∼]?\s*\d+\s*[-~∼]\s*\d+\s*(?:권|화|장)?\s*(?:완결|완|完)?\s*$/,'').trim();
+  return{title:title,author:author};
+}
+function applyAutoTitleAuthor(filename){
+  var titleEl=document.getElementById('inTitle'),authorEl=document.getElementById('inAuthor');
+  if(!titleEl||!authorEl)return;
+  if(titleEl.dataset.userEdited==='1'&&authorEl.dataset.userEdited==='1')return;
+  var r=detectTitleAuthorFromFilename(filename);
+  if(titleEl.dataset.userEdited!=='1'&&r.title)titleEl.value=r.title;
+  if(authorEl.dataset.userEdited!=='1'&&r.author)authorEl.value=r.author;
+  updateFilenamePreview();
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 완결 여부 자동 감지
+// ══════════════════════════════════════════════════════════════
+function detectCompletionAuto(filename,chapters){
+  var evidence=[];
+  var nameMarker=/(완결|完結|完|\(완\)|\(完\)|-완-|_완_|끝)\s*(\.\w+)?$/;
+  if(filename&&nameMarker.test(String(filename).replace(/\.\w+$/,'').trim()))evidence.push('파일명');
+  if(chapters&&chapters.length){
+    var lastCh=chapters[chapters.length-1];
+    var lines=(lastCh.content||'').split('\n').map(function(l){return l.trim();}).filter(Boolean);
+    var tail=lines.slice(-40);
+    var strongRe=/^(완|끝|完|完\.|끝\.|완결|完結|<完>|<끝>|<완>|\(完\)|\(완\)|\(끝\)|[-—–─]\s*(완|完|완결|끝)\s*[-—–─])$/;
+    if(tail.some(function(l){return strongRe.test(l);}))evidence.push('본문 마지막');
+  }
+  return{isComplete:evidence.length>0,evidence:evidence};
+}
+function applyAutoCompletion(filename,chapters){
+  var chk=document.getElementById('chkComplete');
+  var ev=document.getElementById('completeEvidence');
+  if(!chk)return;
+  var r=detectCompletionAuto(filename,chapters);
+  if(chk.dataset.userSet!=='1')chk.checked=r.isComplete;
+  if(ev)ev.textContent=(chk.checked&&r.evidence.length)?('(근거: '+r.evidence.join(', ')+')'):'';
+  updateFilenamePreview();
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 표지 구글 이미지 검색
+// ══════════════════════════════════════════════════════════════
+function openCoverGoogleSearch(){
+  var title=(document.getElementById('inTitle').value||'').trim();
+  var author=(document.getElementById('inAuthor').value||'').trim();
+  var q=title&&author?(title+' '+author+' 표지'):title?(title+' 표지'):author?(author+' 책 표지'):'';
+  if(!q){toast('제목이나 작가를 먼저 입력해주세요','err');return;}
+  window.open('https://www.google.com/search?q='+encodeURIComponent(q)+'&tbm=isch','_blank');
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 간이 EPUB 유효성 체크 (생성 직전 실행)
+// ══════════════════════════════════════════════════════════════
+function validateEpubBeforeBuild(chapters,title,coverData){
+  var warnings=[];
+  if(!title||title==='ebook')warnings.push('제목이 입력되지 않았습니다.');
+  if(!coverData)warnings.push('표지 이미지가 없습니다.');
+  if(!chapters.length)warnings.push('포함된 챕터가 없습니다.');
+  var emptyChs=chapters.filter(function(ch){return!ch.content||ch.content.trim().length<5;});
+  if(emptyChs.length)warnings.push('본문이 비어있는 챕터가 '+emptyChs.length+'개 있습니다: '+emptyChs.slice(0,3).map(function(ch){return ch.title;}).join(', ')+(emptyChs.length>3?' 외':''));
+  var miss=getMiss(chapters);
+  if(miss.length)warnings.push('회차 누락 의심: '+miss.slice(0,10).join(', ')+'화'+(miss.length>10?' 외':''));
+  return warnings;
+}
+function getMiss(chs){
+  var ns=chs.map(function(c){return c.number;}).filter(function(n){return n!==null&&n>0;}).sort(function(a,b){return a-b;});
+  if(ns.length<2)return[];
+  var out=[];for(var i=ns[0];i<=ns[ns.length-1];i++)if(!ns.includes(i))out.push(i);return out;
+}
+function render(){
+  var list=document.getElementById('chList');list.innerHTML='';
+  var total=chOrd.length,inc=chOrd.filter(function(i){return!excl.has(i);}).length;
+  document.getElementById('chMeta').innerHTML='<b>'+total+'</b>개 챕터 · <b>'+inc+'</b>개 포함';
+  var active=chOrd.filter(function(i){return!excl.has(i);}).map(function(i){return rawCh[i];});
+  var miss=getMiss(active),prev=null;
+  chOrd.forEach(function(ci,pos){
+    var ch=rawCh[ci],isExc=excl.has(ci);
+    if(!isExc&&prev!==null&&ch.number!==null){
+      for(var n=prev+1;n<ch.number;n++)if(miss.includes(n))list.appendChild(mkMiss(n));
+    }
+    if(!isExc&&ch.number!==null)prev=ch.number;
+    var el=document.createElement('div');
+    el.className='chi'+(isExc?' exc':'');el.dataset.pos=pos;el.draggable=true;
+    el.innerHTML='<div class="chhand">⠿</div><div class="chbody"><span class="chn">'+(ch.number!==null?String(ch.number).padStart(4,'0'):'----')+'</span><span class="cht">'+esc(ch.title)+'</span></div><button class="chtog" data-pos="'+pos+'">'+(isExc?'＋':'✕')+'</button>';
+    el.querySelector('.chtog').addEventListener('click',function(e){
+      e.stopPropagation();var idx=chOrd[parseInt(e.currentTarget.dataset.pos)];
+      excl.has(idx)?excl.delete(idx):excl.add(idx);render();
+    });
+    el.addEventListener('dragstart',function(e){dragSrc=pos;el.classList.add('drg');e.dataTransfer.effectAllowed='move';});
+    el.addEventListener('dragend',function(){el.classList.remove('drg');clrDO();});
+    el.addEventListener('dragover',function(e){e.preventDefault();clrDO();el.classList.add('dov');});
+    el.addEventListener('drop',function(e){e.preventDefault();drop(pos);});
+    el.addEventListener('touchstart',function(){dragSrc=pos;},{passive:true});
+    el.addEventListener('touchmove',function(e){clrDO();var t=document.elementFromPoint(e.touches[0].clientX,e.touches[0].clientY);if(t&&t.closest){var ci=t.closest('.chi');if(ci)ci.classList.add('dov');}},{passive:true});
+    el.addEventListener('touchend',function(e){var t=document.elementFromPoint(e.changedTouches[0].clientX,e.changedTouches[0].clientY);clrDO();if(t&&t.closest){var ci=t.closest('.chi');if(ci)drop(parseInt(ci.dataset.pos||pos));}dragSrc=null;});
+    list.appendChild(el);
+  });
+}
+function mkMiss(n){
+  var r=document.createElement('div');r.className='chi miss';
+  r.innerHTML='<div class="chhand" style="opacity:.15">⠿</div><div class="chbody"><span class="chn miss-num">'+String(n).padStart(4,'0')+'</span><span class="cht miss-ttl">⚠ '+n+'화 누락</span><span class="miss-badge">없음</span></div>';
+  return r;
+}
+function clrDO(){document.querySelectorAll('.chi.dov').forEach(function(e){e.classList.remove('dov');});}
+function drop(tp){if(dragSrc===null||dragSrc===tp)return;var m=chOrd.splice(dragSrc,1)[0];chOrd.splice(tp,0,m);dragSrc=null;render();}
+
+document.getElementById('btnAll').addEventListener('click',function(){excl.clear();render();});
+document.getElementById('btnNone').addEventListener('click',function(){chOrd.forEach(function(i){excl.add(i);});render();});
+document.getElementById('btnReset').addEventListener('click',function(){chOrd=rawCh.map(function(_,i){return i;});excl.clear();render();});
+
+(function(){
+  var zone=document.getElementById('txtDropZone');
+  if(!zone)return;
+  zone.addEventListener('dragover',function(e){e.preventDefault();e.stopPropagation();zone.style.borderColor='var(--ac)';zone.style.background='var(--acl)';});
+  zone.addEventListener('dragleave',function(){zone.style.borderColor='';zone.style.background='';});
+  zone.addEventListener('drop',function(e){
+    e.preventDefault();e.stopPropagation();zone.style.borderColor='';zone.style.background='';
+    var f=e.dataTransfer.files[0];if(!f)return;
+    var inp=document.getElementById('fileTxt');
+    try{var dt=new DataTransfer();dt.items.add(f);inp.files=dt.files;}catch(ex){}
+    inp.dispatchEvent(new Event('change'));
+  });
+})();
+
+async function loadChaptersFromText(text,displayName){
+  var parsed=parseCh(text);
+  if(!parsed.length){toast('챕터를 찾지 못했습니다 (1화/EP1/Episode 1 등 확인)','err');return false;}
+  var final=parsed.slice(),seen=new Map(),rem=[],autoDup=0;
+  for(var i=0;i<final.length;i++){
+    var n=final[i].number;if(n===null)continue;
+    if(seen.has(n)){
+      var prevIdx=seen.get(n);
+      if(final[prevIdx].content.trim()===final[i].content.trim()){rem.push(i);autoDup++;}
+      else{var a=await askDup(n);if(a==='over')rem.push(seen.get(n));else rem.push(i);}
+    }else seen.set(n,i);
+  }
+  if(autoDup>0)toast(autoDup+'개 동일 중복 회차 자동 제거됨','wrn');
+  rem.sort(function(a,b){return b-a;}).forEach(function(i){final.splice(i,1);});
+  rawCh=final;chOrd=final.map(function(_,i){return i;});excl=new Set();
+  var miss=getMiss(final);
+  var badge=document.getElementById('badgeOk');badge.style.display='block';
+  badge.textContent='✓ '+displayName+'  ·  '+final.length+'개 챕터'+(miss.length?'\n⚠ 누락 회차: '+miss.join(', ')+'화':'');
+  if(displayName!=='붙여넣은 텍스트')applyAutoTitleAuthor(displayName);
+  applyAutoCompletion(displayName,final);
+  document.getElementById('btnBuild').disabled=false;
+  render();toast(final.length+'개 챕터 로드됨','ok');
+  return true;
+}
+
+document.getElementById('fileTxt').addEventListener('change',async function(){
+  var f=this.files[0];if(!f)return;
+  if(!f.name.toLowerCase().endsWith('.txt')){toast('TXT 파일만 가능합니다','err');return;}
+  var reader=new FileReader();
+  reader.onerror=function(){toast('파일 읽기 실패','err');};
+  reader.onload=async function(e){
+    await loadChaptersFromText(e.target.result,f.name);
+  };
+  reader.readAsText(f,'UTF-8');
+});
+
+function togglePasteBox2(){
+  var box=document.getElementById('paste-box2');
+  var willShow=box.style.display!=='flex';
+  box.style.display=willShow?'flex':'none';
+  if(willShow)document.getElementById('paste-area2').focus();
+}
+
+document.getElementById('btnPasteAdd').addEventListener('click',async function(){
+  var ta=document.getElementById('paste-area2');
+  var raw=ta.value;
+  if(!raw||!raw.trim()){toast('붙여넣을 내용이 없습니다','err');return;}
+  var text=stripHtmlToText(raw);
+  var ok=await loadChaptersFromText(text,'붙여넣은 텍스트');
+  if(ok){ta.value='';document.getElementById('paste-box2').style.display='none';}
+});
+
+document.getElementById('fileImg').addEventListener('change',function(){
+  var f=this.files[0];if(!f)return;
+  var r=new FileReader();
+  r.onload=function(e){coverData=e.target.result;document.getElementById('cthumb').innerHTML='<img src="'+coverData+'" alt="">';toast('표지 설정됨','ok');};
+  r.readAsDataURL(f);
+});
+document.getElementById('btnClearCover').addEventListener('click',function(){coverData=null;document.getElementById('cthumb').innerHTML='📖';toast('표지 제거됨');});
+document.getElementById('btnCoverSearch').addEventListener('click',openCoverGoogleSearch);
+
+document.getElementById('slMT').addEventListener('input',function(){document.getElementById('lblMT').textContent=this.value;});
+document.getElementById('slMB').addEventListener('input',function(){document.getElementById('lblMB').textContent=this.value;});
+document.getElementById('slFS').addEventListener('input',function(){document.getElementById('lblFS').textContent=parseFloat(this.value).toFixed(2);});
+
+document.getElementById('colorPick').addEventListener('input',function(){document.getElementById('colorHex').value=this.value;});
+document.getElementById('colorHex').addEventListener('input',function(){if(/^#[0-9a-fA-F]{6}$/.test(this.value))document.getElementById('colorPick').value=this.value;});
+
+/* 괄호 주석 옵션 — 토글 + 미리보기 */
+document.getElementById('togComment').addEventListener('change',function(){
+  document.getElementById('commentOptions').style.display=this.checked?'flex':'none';
+});
+function updateCommentPreview(){
+  var fs=document.getElementById('commentFS').value;
+  var color=document.getElementById('commentColorHex').value;
+  var colorDark=document.getElementById('commentColorHexDark').value;
+  var p=document.getElementById('commentPreview');
+  if(p){p.style.fontSize=fs+'%';p.style.color=color;}
+  var pd=document.getElementById('commentPreviewDark');
+  if(pd){pd.style.fontSize=fs+'%';pd.style.color=colorDark;}
+}
+document.getElementById('commentFS').addEventListener('input',function(){document.getElementById('lblCommentFS').textContent=this.value;updateCommentPreview();});
+document.getElementById('commentColorPick').addEventListener('input',function(){document.getElementById('commentColorHex').value=this.value;updateCommentPreview();});
+document.getElementById('commentColorHex').addEventListener('input',function(){if(/^#[0-9a-fA-F]{6}$/.test(this.value))document.getElementById('commentColorPick').value=this.value;updateCommentPreview();});
+document.getElementById('commentColorPickDark').addEventListener('input',function(){document.getElementById('commentColorHexDark').value=this.value;updateCommentPreview();});
+document.getElementById('commentColorHexDark').addEventListener('input',function(){if(/^#[0-9a-fA-F]{6}$/.test(this.value))document.getElementById('commentColorPickDark').value=this.value;updateCommentPreview();});
+
+function prog(pct,lbl){var w=document.getElementById('progWrap');w.style.display='block';document.getElementById('progFill').style.width=pct+'%';document.getElementById('progLbl').textContent=lbl||'';if(pct>=100)setTimeout(function(){w.style.display='none';},900);}
+
+/* ── EPUB 생성 ── */
+document.getElementById('btnBuild').addEventListener('click',buildEpub);
+/* 저장 파일명 미리보기 — [작가]제목 회차 (완) 형태로 조합 */
+function buildEpubFilename(){
+  var title=document.getElementById('inTitle').value.trim();
+  var author=document.getElementById('inAuthor').value.trim();
+  var episode=document.getElementById('inEpisode').value.trim();
+  var complete=document.getElementById('chkComplete').checked;
+  if(!title&&!author)return null;
+  var name='';
+  if(author)name+='['+author+']';
+  if(title)name+=title;
+  if(episode)name+=' '+episode;
+  if(complete)name+=' (완)';
+  return name||null;
+}
+function updateFilenamePreview(){
+  var fn=buildEpubFilename();
+  var el=document.getElementById('filenamePreviewText');
+  if(!el)return;
+  if(fn){el.textContent=fn+'.epub';el.style.color='var(--ac)';}
+  else{el.textContent='정보를 입력하면 자동 생성됩니다';el.style.color='var(--mu)';}
+}
+
+async function buildEpub(){
+  var chs=chOrd.filter(function(i){return!excl.has(i);}).map(function(i){return rawCh[i];});
+  if(!chs.length){toast('포함된 챕터가 없습니다','err');return;}
+  var titleForValidate=document.getElementById('inTitle').value.trim()||'ebook';
+  var warnings=validateEpubBeforeBuild(chs,titleForValidate,coverData);
+  if(warnings.length){
+    var msg='다음 사항을 확인해주세요:\n\n・'+warnings.join('\n・')+'\n\n그래도 계속 생성할까요?';
+    if(!confirm(msg))return;
+  }
+  var btn=document.getElementById('btnBuild');btn.disabled=true;btn.textContent='생성 중...';
+  prog(5,'초기화...');await tick();
+  try{
+    var title=document.getElementById('inTitle').value.trim()||'ebook';
+    var author=document.getElementById('inAuthor').value.trim();
+    var color=document.getElementById('colorHex').value||'#1a5fa8';
+    var optB=document.getElementById('togBlank').checked;
+    var optI=document.getElementById('togIndent').checked;
+    var optC=document.getElementById('togComment').checked;
+    var h3MT=document.getElementById('slMT').value;
+    var h3MB=document.getElementById('slMB').value;
+    var h3FS=document.getElementById('slFS').value;
+    var zip=new JSZip();
+    zip.file('mimetype','application/epub+zip',{compression:'STORE'});
+    zip.folder('META-INF').file('container.xml','<?xml version="1.0" encoding="utf-8"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>');
+    var ob=zip.folder('OEBPS');
+    prog(15,'스타일 생성...');await tick();
+    var commentFS=document.getElementById('commentFS').value||'83';
+    var commentColor=document.getElementById('commentColorHex').value||'#666666';
+    var commentColorDark=document.getElementById('commentColorHexDark').value||'#aaaaaa';
+    ob.file('style.css',
+      'body{line-height:1.75;font-family:serif;}'
+      +'p{margin:.6em 0 1.4em;'+(optI?'text-indent:1em;':'')+'}'
+      +'h3{font-size:'+h3FS+'em;text-align:center;margin:'+h3MT+'em 0 '+h3MB+'em !important;padding:0;color:'+color+'!important;page-break-before:always;}'
+      +'.scene{text-align:center;margin:2em 0;font-size:1.1em;color:'+color+';}'
+      +'.comment{font-size:'+commentFS+'%;color:'+commentColor+';}'
+      +'@media (prefers-color-scheme: dark){.comment{color:'+commentColorDark+'!important;}}'
+    );
+    prog(25,'표지 처리...');await tick();
+    var cExt='jpg',cMT='image/jpeg';
+    if(coverData){var b64=coverData.split(',')[1],mt=coverData.match(/data:([^;]+)/)[1];cMT=mt;cExt=mt.includes('png')?'png':'jpg';var bin=atob(b64),bts=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)bts[i]=bin.charCodeAt(i);ob.file('cover.'+cExt,bts,{binary:true});}
+    prog(35,'챕터 생성...');await tick();
+    var chF=[];
+    for(var ci=0;ci<chs.length;ci++){
+      var ch=chs[ci],slug='ch'+String(ci+1).padStart(4,'0'),fname=slug+'.xhtml';
+      var raw=clean(ch.content,{blank:optB});
+      var body='<h3 id="'+slug+'">'+esc(ch.title)+'</h3>';
+      var lines=raw.split('\n');
+      for(var li=0;li<lines.length;li++){
+        var line=lines[li];
+        if(SCENE_RE.test(line)){body+='<div class="scene">* * *</div>';continue;}
+        if(!line.trim())continue;
+        var l=esc(line);
+        if(optC)l=l.replace(/\((?:[^()]*|\((?:[^()]*|\([^()]*\))*\))*\)/g,'<span class="comment">$&</span>');
+        body+='<p>'+l+'</p>';
+      }
+      ob.file(fname,'<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd"><html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ko"><head><meta charset="utf-8"/><title>'+esc(ch.title)+'</title><link rel="stylesheet" type="text/css" href="style.css"/></head><body>'+body+'</body></html>');
+      chF.push({fname:fname,slug:slug,title:ch.title});
+      if(ci%10===0){prog(35+Math.round(ci/chs.length*35),'챕터 '+(ci+1)+'/'+chs.length+'...');await tick();}
+    }
+    prog(72,'파일 구조 생성...');await tick();
+    var mf='',sp='',ncx='',toc='';
+    if(coverData){mf+='<item id="ci" href="cover.'+cExt+'" media-type="'+cMT+'"/>\n<item id="cp" href="cover.xhtml" media-type="application/xhtml+xml"/>\n';sp+='<itemref idref="cp"/>\n';ob.file('cover.xhtml','<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd"><html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ko"><head><meta charset="utf-8"/><title>Cover</title></head><body style="margin:0;text-align:center"><img src="cover.'+cExt+'" style="max-width:100%;height:auto" alt=""/></body></html>');}
+    chF.forEach(function(cf,idx){mf+='<item id="'+cf.slug+'" href="'+cf.fname+'" media-type="application/xhtml+xml"/>\n';sp+='<itemref idref="'+cf.slug+'"/>\n';ncx+='<navPoint id="n'+idx+'" playOrder="'+(idx+2)+'"><navLabel><text>'+esc(cf.title)+'</text></navLabel><content src="'+cf.fname+'#'+cf.slug+'"/></navPoint>\n';toc+='<li><a href="'+cf.fname+'#'+cf.slug+'">'+esc(cf.title)+'</a></li>\n';});
+    var uid='urn:uuid:'+(crypto.randomUUID?crypto.randomUUID():([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,function(c){return(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16);}));
+    var today=new Date().toISOString().slice(0,10);
+    ob.file('content.opf','<?xml version="1.0" encoding="utf-8"?><package version="2.0" unique-identifier="BookId" xmlns="http://www.idpf.org/2007/opf"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf"><dc:title>'+esc(title)+'</dc:title><dc:creator opf:role="aut">'+esc(author)+'</dc:creator><dc:language>ko</dc:language><dc:date>'+today+'</dc:date><dc:identifier id="BookId" opf:scheme="UUID">'+uid+'</dc:identifier>'+(coverData?'<meta name="cover" content="ci"/>':'')+'</metadata><manifest>'+mf+'<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="css" href="style.css" media-type="text/css"/></manifest><spine toc="ncx">'+sp+'</spine></package>');
+    ob.file('toc.ncx','<?xml version="1.0" encoding="utf-8"?><!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd"><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="'+uid+'"/></head><docTitle><text>'+esc(title)+'</text></docTitle><navMap>'+ncx+'</navMap></ncx>');
+    ob.file('nav.xhtml','<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="ko"><head><meta charset="utf-8"/><title>목차</title></head><body><nav epub:type="toc"><ol>'+toc+'</ol></nav></body></html>');
+    prog(88,'압축 중...');await tick();
+    var blob=await zip.generateAsync({type:'blob',mimeType:'application/epub+zip',compression:'DEFLATE',compressionOptions:{level:6}});
+    prog(100,'완료!');await tick();
+    var url=URL.createObjectURL(blob);
+    var filename=buildEpubFilename()||title;
+    var a=document.createElement('a');a.href=url;a.download=filename+'.epub';
+    document.body.appendChild(a);a.click();
+    setTimeout(function(){URL.revokeObjectURL(url);document.body.removeChild(a);},8000);
+    toast('"'+filename+'.epub" 저장됨','ok');
+  }catch(e){console.error(e);toast('오류: '+e.message,'err');}
+  finally{btn.disabled=false;btn.textContent='EPUB 생성하기';}
+}
+
+/* ════════════════════════════
+   표지 비율 수정 토글
+════════════════════════════ */
+document.getElementById('ckCoverFix').addEventListener('change',function(){
+  document.getElementById('coverFixOptions').style.display=this.checked?'flex':'none';
+});
+document.getElementById('coverFixOptions').style.display='flex';
+
+/* ════════════════════════════
+   회차 분리 토글 & 미리보기
+════════════════════════════ */
+document.getElementById('ckSplit').addEventListener('change',function(){
+  document.getElementById('splitOptions').style.display=this.checked?'flex':'none';
+  if(this.checked&&epubZip)updateSplitPreview();
+});
+document.getElementById('splitTagSel').addEventListener('change',function(){
+  if(epubZip)updateSplitPreview();
+});
+
+/* epub 로드 후 미리보기 업데이트 트리거 */
+var _origEpubLoad=document.getElementById('fileEpub').onchange;
+document.getElementById('fileEpub').addEventListener('change',function(){
+  setTimeout(function(){
+    if(document.getElementById('ckSplit').checked&&epubZip)updateSplitPreview();
+  },300);
+});
+
+async function detectChapterTag(zip){
+  /* h1/h2/h3 중 toc에 id 연결된 것 탐색 */
+  var tag=document.getElementById('splitTagSel').value;
+  if(tag!=='auto')return tag;
+  var found=null;
+  var files=Object.keys(zip.files).filter(function(p){return/\.(html|xhtml|htm)$/i.test(p)&&!p.match(/cover|title/i);});
+  for(var i=0;i<Math.min(files.length,3)&&!found;i++){
+    var txt=await zip.file(files[i]).async('string');
+    if(/<h1[^>]*id=/i.test(txt)){found='h1';break;}
+    if(/<h2[^>]*id=/i.test(txt)){found='h2';break;}
+    if(/<h3[^>]*id=/i.test(txt)){found='h3';break;}
+  }
+  return found||'h2';
+}
+
+/* 제목(h1~h4) 바로 아래에 붙은 구분선(hr) 감지 — 카카오페이지 등 원본 HTML에 흔한 패턴 */
+var TITLE_HR_RE=/(<h[1-4][^>]*>[\s\S]{0,200}?<\/h[1-4]>)\s*(<hr\b[^>]*\/?>)/gi;
+async function detectTitleHr(zip){
+  var files=Object.keys(zip.files).filter(function(p){return/\.(xhtml|html|htm)$/i.test(p)&&!/cover|title|nav/i.test(p);});
+  for(var i=0;i<Math.min(files.length,5);i++){
+    var txt=await zip.file(files[i]).async('string');
+    TITLE_HR_RE.lastIndex=0;
+    if(TITLE_HR_RE.test(txt))return true;
+  }
+  return false;
+}
+
+/* 본문 단락(<p>)을 감싸는 가장 바깥 div의 class 감지 — body에 직접 줄높이를 줘도
+   .aegix 같은 래퍼 class가 더 높은 우선순위로 줄높이를 따로 갖고 있는 EPUB을 위함 */
+function detectContentWrapClass(html){
+  var m=html.match(/<div[^>]+class=["']([^"']+)["'][^>]*>\s*<p[\s>]/i);
+  return m?m[1].split(/\s+/)[0]:null;
+}
+
+/* 제목(h1~h4)을 감싸는 'header'류 class를 가진 박스, 그리고 실제 제목에 쓰인 heading
+   태그(h1~h4) 자체를 함께 감지한다.
+   ※ 사이트마다 챕터 제목에 h3 대신 h4 등 다른 태그를 쓰는 경우가 있는데, 'h3'로 고정해서
+      패치하면 그 책에는 아무 효과가 없는 새 규칙만 추가되고 실제 제목(h4 등)은 전혀 안 바뀐다.
+      그래서 박스를 찾을 때 그 안에서 실제로 쓰인 heading 태그까지 같이 알아낸다.
+   ※ .chapter-header처럼 고정 height/padding-top/bottom(또는 padding-left:62% 같은
+      비대칭 레이아웃)을 갖고 있으면, 제목 자체의 마진/정렬을 바꿔도 화면에는 거의 반영되지
+      않거나 가운데가 아닌 다른 위치에 정렬된 것처럼 보인다. 이런 박스도 함께 정리한다. */
+function detectTitleStructure(html){
+  var re=/<div[^>]+class=["']([^"']*header[^"']*)["'][^>]*>[\s\S]{0,300}?<h([1-4])\b/i;
+  var m=html.match(re);
+  if(m)return{boxClasses:m[1].split(/\s+/).filter(Boolean),tag:'h'+m[2]};
+  /* header류 박스를 못 찾았으면 본문에서 첫 heading 태그만이라도 찾아서 사용한다 */
+  var m2=html.match(/<h([1-4])\b/i);
+  return{boxClasses:[],tag:m2?('h'+m2[1]):'h3'};
+}
+
+async function parseTocEntries(zip){
+  /* toc.ncx 파싱 → [{title, src, file, anchor}] */
+  var ncxPath=null;
+  zip.forEach(function(p){if(p.endsWith('toc.ncx'))ncxPath=p;});
+  if(!ncxPath)return null;
+  var ncx=await zip.file(ncxPath).async('string');
+  var re=/<navPoint[^>]*>[\s\S]*?<text>([\s\S]*?)<\/text>[\s\S]*?<content src="([^"]+)"[\s\S]*?<\/navPoint>/g;
+  var entries=[],m;
+  while((m=re.exec(ncx))!==null){
+    var title=m[1].replace(/<[^>]+>/g,'').trim();
+    var src=m[2];
+    var parts=src.split('#');
+    entries.push({title:title,src:src,file:parts[0],anchor:parts[1]||null});
+  }
+  return entries;
+}
+
+async function updateSplitPreview(){
+  if(!epubZip)return;
+  var box=document.getElementById('splitPreviewBox');
+  var list=document.getElementById('splitPreviewList');
+  list.textContent='분석 중...';box.style.display='block';
+  try{
+    var entries=await parseTocEntries(epubZip);
+    if(!entries||!entries.length){list.textContent='목차(toc.ncx)를 찾을 수 없습니다.';return;}
+    /* 커버/titlepage 제외 */
+    var chs=entries.filter(function(e){return!e.file.match(/cover|title/i);});
+    if(!chs.length){list.textContent='분리 가능한 챕터를 찾지 못했습니다.';return;}
+    var tag=await detectChapterTag(epubZip);
+    /* html 파일별로 챕터 수 집계 */
+    var byFile={};
+    chs.forEach(function(e){
+      if(!byFile[e.file])byFile[e.file]=[];
+      byFile[e.file].push(e);
+    });
+    var multiFiles=Object.keys(byFile).filter(function(f){return byFile[f].length>1;});
+    var html='<b>'+chs.length+'개 챕터</b> / <b>'+Object.keys(byFile).length+'개 HTML 파일</b> 감지<br>';
+    if(multiFiles.length===0){
+      html+='<span style="color:var(--ok)">✓ 이미 회차별로 분리되어 있습니다.</span>';
+    }else{
+      html+='분리 대상: <b>'+multiFiles.length+'개</b> 파일 (챕터 태그: <b>&lt;'+tag+'&gt;</b>)<br>';
+      html+='<span style="color:var(--mu)">예시 — '+multiFiles[0]+': '+byFile[multiFiles[0]].length+'화</span>';
+    }
+    list.innerHTML=html;
+    document.getElementById('splitInfo').style.display='none';
+  }catch(e){list.textContent='분석 실패: '+e.message;}
+}
+
+/* 회차별 HTML 분리 실행 */
+async function splitChapters(zip){
+  var entries=await parseTocEntries(zip);
+  if(!entries||!entries.length)throw new Error('toc.ncx를 찾을 수 없습니다');
+  var chs=entries.filter(function(e){return!e.file.match(/cover|title/i);});
+  if(!chs.length)throw new Error('분리 가능한 챕터 없음');
+
+  var tag=await detectChapterTag(zip);
+
+  /* 파일명 → fullPath 매핑 */
+  var filePaths={};
+  zip.forEach(function(p){
+    if(/\.(html|xhtml|htm)$/i.test(p)&&!p.match(/cover|title/i)){
+      var fn=p.split('/').pop();
+      filePaths[fn]=p;
+    }
+  });
+
+  /* html별 챕터 목록 */
+  var byFile={};
+  chs.forEach(function(e){
+    if(!byFile[e.file])byFile[e.file]=[];
+    byFile[e.file].push(e);
+  });
+  var multiFiles=Object.keys(byFile).filter(function(f){return byFile[f].length>1;});
+  if(multiFiles.length===0)return {skipped:true,count:chs.length};
+
+  /* OPF 경로 기준 prefix */
+  var opfPath=null;
+  zip.forEach(function(p){if(p.endsWith('content.opf'))opfPath=p;});
+  var prefix=opfPath?opfPath.replace(/[^\/]+$/,''):'';
+
+  /* 원본 HTML 읽기 */
+  var srcFiles={};
+  for(var fn of multiFiles){
+    var fp=filePaths[fn];
+    if(!fp)throw new Error('파일 없음: '+fn);
+    srcFiles[fn]=await zip.file(fp).async('string');
+  }
+
+  /* CSS link 태그 추출 (첫 파일에서) */
+  var firstHtml=srcFiles[multiFiles[0]]||'';
+  var cssLinks=(firstHtml.match(/<link[^>]*stylesheet[^>]*>/gi)||[]).join('\n');
+
+  /* 분리 작업 */
+  var newFiles={};
+  var newManifestItems=[];
+  var newSpineItems=[];
+  var newNcxPoints=[];
+  var splitIdx=0;
+
+  /* 단일 파일(분리 불필요)은 기존 spine에서 유지 */
+  var singleFileSpine=[];
+  Object.keys(byFile).forEach(function(fn){
+    if(byFile[fn].length<=1)singleFileSpine.push(fn);
+  });
+
+  for(var srcFn of multiFiles){
+    var rawHtml=srcFiles[srcFn];
+    /* body 내용 추출 */
+    var bodyM=rawHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    var bodyContent=bodyM?bodyM[1]:'';
+    /* head 추출 */
+    var headM=rawHtml.match(/<head[\s\S]*?<\/head>/i);
+    var headStr=headM?headM[0]:'<head>'+cssLinks+'</head>';
+
+    /* 챕터 태그 위치 탐색 */
+    var tagRe=new RegExp('<'+tag+'[\\s>][^>]*id=["\']?([^"\'\\s>]+)["\']?[^>]*>','gi');
+    var splits=[];
+    var mm;
+    while((mm=tagRe.exec(bodyContent))!==null){
+      splits.push({idx:mm.index,anchor:mm[1]});
+    }
+    if(!splits.length){
+      /* anchor 없는 형태도 탐색 */
+      var tagRe2=new RegExp('<'+tag+'[\\s>]','gi');
+      var mm2;
+      var si2=0;
+      while((mm2=tagRe2.exec(bodyContent))!==null){
+        var chEntry2=byFile[srcFn][si2]||null;
+        splits.push({idx:mm2.index,anchor:chEntry2?chEntry2.anchor:null});
+        si2++;
+      }
+    }
+
+    /* 전문 (첫 챕터 앞) */
+    var preamble='';
+    if(splits.length>0&&splits[0].idx>200){
+      preamble=bodyContent.slice(0,splits[0].idx).trim();
+    }
+
+    for(var si=0;si<splits.length;si++){
+      var sp=splits[si];
+      var chList=byFile[srcFn];
+      /* anchor로 매칭, 없으면 순서로 */
+      var chEntry=null;
+      if(sp.anchor)chEntry=chList.find(function(e){return e.anchor===sp.anchor;});
+      if(!chEntry)chEntry=chList[si]||{title:'챕터'+(si+1),anchor:sp.anchor||('ch_'+splitIdx)};
+
+      var segEnd=si+1<splits.length?splits[si+1].idx:bodyContent.length;
+      var segBody=(si===0&&preamble?preamble+'\n':'')+bodyContent.slice(sp.idx,segEnd).trim();
+
+      var newFname='ch'+String(++splitIdx).padStart(4,'0')+'.xhtml';
+      var newId='ch_split_'+splitIdx;
+      var fileContent=
+        '<?xml version="1.0" encoding="utf-8"?>'
+        +'<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">'
+        +'<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ko">'
+        +headStr
+        +'<body class="calibre">'+segBody+'</body></html>';
+
+      newFiles[newFname]=fileContent;
+      newManifestItems.push({id:newId,href:newFname});
+      newNcxPoints.push({id:newId,title:chEntry.title,fname:newFname,anchor:sp.anchor});
+    }
+  }
+
+  /* 기존 멀티 파일 삭제 */
+  for(var fn of multiFiles){
+    var fp2=filePaths[fn];
+    if(fp2)zip.remove(fp2);
+  }
+  /* 새 파일 추가 */
+  Object.keys(newFiles).forEach(function(fname){
+    zip.file(prefix+fname,newFiles[fname]);
+  });
+
+  /* OPF 갱신 */
+  if(opfPath){
+    var opf=await zip.file(opfPath).async('string');
+    /* 기존 분리 대상 html item 제거 */
+    for(var fn3 of multiFiles){
+      var fnEsc=fn3.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      opf=opf.replace(new RegExp('<item[^>]*href="'+fnEsc+'"[^>]*/?>','g'),'');
+    }
+    /* 새 manifest item 삽입 */
+    var newItems=newManifestItems.map(function(m){
+      return '<item id="'+m.id+'" href="'+m.href+'" media-type="application/xhtml+xml"/>';
+    }).join('\n');
+    opf=opf.replace(/(<\/manifest>)/i,newItems+'\n$1');
+
+    /* spine: 기존 멀티 itemref 제거하고 새것 삽입 */
+    /* 기존 spine 내 idref 목록 읽기 */
+    var existingSpine=opf.match(/<spine[^>]*>([\s\S]*?)<\/spine>/i);
+    if(existingSpine){
+      var spineContent=existingSpine[1];
+      /* 멀티 파일에 해당하는 idref 제거 */
+      /* OPF manifest에서 href→id 역매핑 */
+      var hrefToId={};
+      var itemRe=/<item\s+id="([^"]+)"\s+href="([^"]+)"/gi;
+      var im;
+      while((im=itemRe.exec(opf))!==null)hrefToId[im[2]]=im[1];
+      for(var fn4 of multiFiles){
+        var oldId=hrefToId[fn4];
+        if(oldId){
+          var oldIdEsc=oldId.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+          spineContent=spineContent.replace(new RegExp('<itemref\\s+idref="'+oldIdEsc+'"\\s*/?>','g'),'');
+        }
+      }
+      /* 새 itemref 추가 */
+      var newRefs=newManifestItems.map(function(m){return '<itemref idref="'+m.id+'"/>';}).join('\n');
+      spineContent=spineContent.trimEnd()+'\n'+newRefs;
+      opf=opf.replace(/<spine[^>]*>[\s\S]*?<\/spine>/i,existingSpine[0].replace(existingSpine[1],spineContent));
+    }
+    zip.file(opfPath,opf);
+  }
+
+  /* toc.ncx 갱신 */
+  var ncxPath=null;
+  zip.forEach(function(p){if(p.endsWith('toc.ncx'))ncxPath=p;});
+  if(ncxPath&&newNcxPoints.length){
+    var ncx=await zip.file(ncxPath).async('string');
+    /* 기존 멀티 navPoint 제거 */
+    for(var fn5 of multiFiles){
+      var fnEsc5=fn5.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      ncx=ncx.replace(new RegExp('<navPoint[^>]*>[\\s\\S]*?<content\\s+src="'+fnEsc5+'[^"]*"[\\s\\S]*?<\\/navPoint>','g'),'');
+    }
+    /* 새 navPoint 삽입 */
+    var newNav=newNcxPoints.map(function(n,i){
+      return '<navPoint id="ns'+i+'" playOrder="'+(i+10)+'">'
+        +'<navLabel><text>'+n.title.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</text></navLabel>'
+        +'<content src="'+n.fname+(n.anchor?'#'+n.anchor:'')+'" />'
+        +'</navPoint>';
+    }).join('\n');
+    ncx=ncx.replace(/(<\/navMap>)/i,newNav+'\n$1');
+    zip.file(ncxPath,ncx);
+  }
+
+  return {skipped:false,count:newNcxPoints.length};
+}
+
+/* 표지 비율 수정 실행 */
+async function fixCoverAspectRatio(zip){
+  var ar=document.querySelector('input[name="coverAR"]:checked').value;
+  var fixed=false;
+  /* titlepage.xhtml 수정 — await로 올바르게 처리 */
+  var tpPaths=[];
+  zip.forEach(function(p){if(/titlepage\.(xhtml|html)/i.test(p))tpPaths.push(p);});
+  for(var i=0;i<tpPaths.length;i++){
+    var p=tpPaths[i];
+    var s=await zip.file(p).async('string');
+    /* preserveAspectRatio 교체 */
+    if(s.indexOf('preserveAspectRatio')!==-1){
+      s=s.replace(/preserveAspectRatio="[^"]*"/g,'preserveAspectRatio="'+ar+'"');
+    } else {
+      /* SVG에 없으면 svg 태그에 추가 */
+      s=s.replace(/(<svg[^>]*)(>)/i,'$1 preserveAspectRatio="'+ar+'"$2');
+    }
+    /* meet 모드일 때 body 높이 100% 보장 */
+    if(ar!=='none'){
+      s=s.replace(/body\s*\{([^}]*)}/,function(m,inner){
+        if(!inner.includes('height:100'))inner=inner.trimEnd()+(inner.trimEnd().endsWith(';')?'':';')+'height:100%;';
+        return 'body{'+inner+'}';
+      });
+    }
+    zip.file(p,s);
+    fixed=true;
+  }
+  /* cover.xhtml 이미지 스타일 수정 */
+  var cvPaths=[];
+  zip.forEach(function(p){if(/cover\.xhtml/i.test(p)&&!/titlepage/i.test(p))cvPaths.push(p);});
+  for(var j=0;j<cvPaths.length;j++){
+    var cp=cvPaths[j];
+    var cs=await zip.file(cp).async('string');
+    if(ar==='xMidYMid meet'){
+      cs=cs.replace(/(<img[^>]+style=")[^"]*(")/i,'$1max-width:100%;height:auto;display:block;margin:0 auto$2');
+    } else if(ar==='xMidYMid slice'){
+      cs=cs.replace(/(<img[^>]+style=")[^"]*(")/i,'$1width:100%;height:100vh;object-fit:cover;display:block$2');
+    }
+    zip.file(cp,cs);
+  }
+  return fixed;
+}
+
+/* ════════════════════════════
+   탭 전환
+════════════════════════════ */
+function switchTab(t){
+  document.getElementById('tabConvert').classList.toggle('active',t==='convert');
+  document.getElementById('tabEdit').classList.toggle('active',t==='edit');
+  document.getElementById('tabBtnConvert').classList.toggle('active',t==='convert');
+  document.getElementById('tabBtnEdit').classList.toggle('active',t==='edit');
+}
+
+/* ════════════════════════════
+   EPUB 수정 탭
+════════════════════════════ */
+var epubZip=null,epubFilename='';
+
+(function(){
+  var zone=document.getElementById('epubDropZone');
+  if(!zone)return;
+  zone.addEventListener('dragover',function(e){e.preventDefault();zone.style.borderColor='var(--ac)';zone.style.background='var(--acl)';});
+  zone.addEventListener('dragleave',function(){zone.style.borderColor='';zone.style.background='';});
+  zone.addEventListener('drop',function(e){
+    e.preventDefault();zone.style.borderColor='';zone.style.background='';
+    var f=e.dataTransfer.files[0];if(!f)return;
+    try{var dt=new DataTransfer();dt.items.add(f);document.getElementById('fileEpub').files=dt.files;}catch(ex){}
+    document.getElementById('fileEpub').dispatchEvent(new Event('change'));
+  });
+})();
+
+document.getElementById('fileEpub').addEventListener('change',async function(){
+  var f=this.files[0];if(!f)return;
+  if(!f.name.toLowerCase().endsWith('.epub')){toast('EPUB 파일만 가능합니다','err');return;}
+  try{
+    epubZip=await JSZip.loadAsync(f);
+    epubFilename=f.name.replace(/\.epub$/i,'');
+    var badge=document.getElementById('epubBadge');badge.style.display='block';badge.textContent='✓ '+f.name;
+    document.getElementById('btnEpubSave').disabled=false;
+    toast('EPUB 로드 완료','ok');
+    var hrBox=document.getElementById('hrAlertBox');
+    if(hrBox){
+      hrBox.style.display='none';
+      var hasHr=await detectTitleHr(epubZip);
+      hrBox.style.display=hasHr?'block':'none';
+    }
+  }catch(e){toast('EPUB 읽기 실패: '+e.message,'err');}
+});
+
+/* ── 체크박스 토글 ── */
+document.getElementById('ckBody').addEventListener('change',function(){
+  document.getElementById('bodyControls').style.display=this.checked?'flex':'none';
+  document.getElementById('bodyDefaultBadge').style.display=this.checked?'none':'inline-block';
+});
+document.getElementById('ckH3Color').addEventListener('change',function(){
+  document.getElementById('h3ColorControls').style.display=this.checked?'block':'none';
+  document.getElementById('h3ColorBadge').style.display=this.checked?'none':'inline-block';
+  updateEpH3Preview();
+});
+document.getElementById('ckH3Center').addEventListener('change',function(){updateEpH3Preview();});
+document.getElementById('ckH3Bold').addEventListener('change',function(){updateEpH3Preview();});
+document.getElementById('ckH3Detail').addEventListener('change',function(){
+  document.getElementById('h3Controls').style.display=this.checked?'flex':'none';
+  document.getElementById('h3DefaultBadge').style.display=this.checked?'none':'inline-block';
+  updateEpH3Preview();
+});
+document.getElementById('ckScColor').addEventListener('change',function(){
+  document.getElementById('scColorControls').style.display=this.checked?'block':'none';
+  document.getElementById('scColorBadge').style.display=this.checked?'none':'inline-block';
+  /* 제목(h3) 색상을 그대로 장면전환 색상에 채워준다 (이후 자유롭게 변경 가능) */
+  if(this.checked){
+    var h3c=document.getElementById('epH3ColorHex').value;
+    if(/^#[0-9a-fA-F]{6}$/.test(h3c)){
+      document.getElementById('epScColor').value=h3c;
+      document.getElementById('epScColorHex').value=h3c;
+    }
+  }
+  updateEpScPreview();
+});
+document.getElementById('btnScColorFromH3').addEventListener('click',function(){
+  var h3c=document.getElementById('epH3ColorHex').value;
+  if(/^#[0-9a-fA-F]{6}$/.test(h3c)){
+    document.getElementById('epScColor').value=h3c;
+    document.getElementById('epScColorHex').value=h3c;
+    updateEpScPreview();
+  }
+});
+document.getElementById('ckScCenter').addEventListener('change',function(){updateEpScPreview();});
+document.getElementById('ckScDetail').addEventListener('change',function(){
+  document.getElementById('scControls').style.display=this.checked?'flex':'none';
+  document.getElementById('scDefaultBadge').style.display=this.checked?'none':'inline-block';
+  updateEpScPreview();
+});
+
+/* ── 미리보기 ── */
+function updateEpBodyPreview(){
+  var m=document.getElementById('epBodyMargin').value;
+  var lh=document.getElementById('epLineHeight').value;
+  var pt=document.getElementById('epPMarginT').value;
+  var pb=document.getElementById('epPMarginB').value;
+  var marginStr=pt+'em '+m+'em '+pb+'em';
+  ['epBodyPreview','epBodyPreview2'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el){el.style.lineHeight=lh;el.style.margin=marginStr;}
+  });
+}
+function updateEpH3Preview(){
+  var useColor=document.getElementById('ckH3Color').checked;
+  var color=useColor?document.getElementById('epH3Color').value:'#888';
+  var fs=document.getElementById('ckH3Detail').checked?document.getElementById('epH3FS').value:'1.1';
+  var center=document.getElementById('ckH3Center').checked;
+  var bold=document.getElementById('ckH3Bold').checked;
+  var el=document.getElementById('epH3Preview');
+  if(el){
+    el.style.fontSize=fs+'em';
+    el.style.color=color;
+    el.style.display='block';
+    el.style.textAlign=center?'center':'left';
+    el.style.fontWeight=bold?'bold':'normal';
+  }
+}
+function updateEpScPreview(){
+  var useColor=document.getElementById('ckScColor').checked;
+  var color=useColor?document.getElementById('epScColor').value:'#888';
+  var fs=document.getElementById('ckScDetail').checked?document.getElementById('epScFS').value:'1.1';
+  var center=document.getElementById('ckScCenter').checked;
+  var el=document.getElementById('epScPreview');
+  if(el){
+    el.style.fontSize=fs+'em';
+    el.style.color=color;
+    el.style.display='block';
+    el.style.textAlign=center?'center':'left';
+  }
+}
+
+/* ── 슬라이더 이벤트 ── */
+document.getElementById('epBodyMargin').addEventListener('input',function(){document.getElementById('lblEpBodyMargin').textContent=parseFloat(this.value).toFixed(1)+'em';updateEpBodyPreview();});
+document.getElementById('epLineHeight').addEventListener('input',function(){document.getElementById('lblEpLineHeight').textContent=parseFloat(this.value).toFixed(2);updateEpBodyPreview();});
+document.getElementById('epPMarginT').addEventListener('input',function(){document.getElementById('lblEpPMarginT').textContent=parseFloat(this.value).toFixed(1)+'em';updateEpBodyPreview();});
+document.getElementById('epPMarginB').addEventListener('input',function(){document.getElementById('lblEpPMarginB').textContent=parseFloat(this.value).toFixed(1)+'em';updateEpBodyPreview();});
+[['epH3FS','lblEpH3FS','em'],['epH3MT','lblEpH3MT','em'],['epH3MB','lblEpH3MB','em']].forEach(function(r){
+  var el=document.getElementById(r[0]);
+  if(el)el.addEventListener('input',function(){document.getElementById(r[1]).textContent=parseFloat(this.value).toFixed(2)+r[2];updateEpH3Preview();});
+});
+[['epScFS','lblEpScFS','em'],['epScM','lblEpScM','em']].forEach(function(r){
+  var el=document.getElementById(r[0]);
+  if(el)el.addEventListener('input',function(){document.getElementById(r[1]).textContent=parseFloat(this.value).toFixed(2)+r[2];updateEpScPreview();});
+});
+document.getElementById('epH3Color').addEventListener('input',function(){document.getElementById('epH3ColorHex').value=this.value;updateEpH3Preview();});
+document.getElementById('epH3ColorHex').addEventListener('input',function(){if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('epH3Color').value=this.value;updateEpH3Preview();}});
+document.getElementById('epScColor').addEventListener('input',function(){document.getElementById('epScColorHex').value=this.value;updateEpScPreview();});
+document.getElementById('epScColorHex').addEventListener('input',function(){if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('epScColor').value=this.value;updateEpScPreview();}});
+
+/* ── CSS 병합: 원본 셀렉터 블록만 교체, 나머지(@font-face 등) 보존 ── */
+function mergeCss(original,overrides){
+  var result=original;
+  Object.keys(overrides).forEach(function(sel){
+    var escaped=sel.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+    var re=new RegExp(escaped+'\\s*\\{[^}]*\\}','g');
+    if(re.test(result)){
+      result=result.replace(new RegExp(escaped+'\\s*\\{[^}]*\\}','g'),overrides[sel]);
+    }else{
+      result=result+'\n'+overrides[sel];
+    }
+  });
+  return result;
+}
+
+/* 원본 CSS에서 셀렉터 블록 안의 특정 속성값 추출 */
+function extractProp(css,sel,prop){
+  var escaped=sel.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  var blockM=css.match(new RegExp(escaped+'\\s*\\{([^}]*)\\}'));
+  if(!blockM)return null;
+  var propM=blockM[1].match(new RegExp('(?:^|;)\\s*'+prop+'\\s*:\\s*([^;!]+?)(?:\\s*!important)?\\s*(?:;|$)'));
+  return propM?propM[1].trim():null;
+}
+
+/* 원본 CSS에서 셀렉터 블록 전체를 수정 없이 유지하면서 특정 속성만 추가/교체
+   ※ 셀렉터 경계를 식별자 단위로 검사 — 예: sel='p' 가 'sup{'나 'p.pic,' 안의 p와
+      잘못 매칭되지 않도록 앞뒤로 [.\w-]가 아닌 문자(혹은 시작/공백/{)인지 확인한다 */
+function patchBlock(css,sel,patches){
+  var escaped=sel.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  var re=new RegExp('(^|[^.\\w-])('+escaped+')(?![.\\w-])(\\s*)(\\{)([^}]*)(\\})');
+  var m=css.match(re);
+  if(!m){
+    // 셀렉터 자체가 없으면 새로 추가
+    var props=Object.entries(patches).map(function(e){return e[0]+':'+e[1];}).join(';');
+    return css+'\n'+sel+'{'+props+'}';
+  }
+  var block=m[5];
+  Object.keys(patches).forEach(function(prop){
+    var val=patches[prop];
+    var propRe=new RegExp('((?:^|;)\\s*)('+prop.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*:[^;]*)','g');
+    if(propRe.test(block)){
+      block=block.replace(new RegExp('((?:^|;)\\s*)('+prop.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*:[^;]*)','g'),
+        function(full,prefix){return prefix+prop+':'+val;});
+    }else{
+      block=block.trimEnd();
+      if(block&&!block.endsWith(';'))block+=';';
+      block+=prop+':'+val+';';
+    }
+  });
+  return css.replace(re,function(){return m[1]+m[2]+m[3]+m[4]+block+m[6];});
+}
+
+/* prefers-color-scheme:dark 블록 안에 sel{...} 규칙을 추가/수정.
+   블록이 없으면 새로 만들고, 있으면 안쪽 내용에 patchBlock과 동일한 로직을 재사용. */
+function patchDarkBlock(css,sel,patches){
+  var mre=/@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)\s*\{/i;
+  var mm=mre.exec(css);
+  if(!mm){
+    var props=Object.entries(patches).map(function(e){return e[0]+':'+e[1];}).join(';');
+    return css+'\n@media (prefers-color-scheme: dark){\n'+sel+'{'+props+'}\n}';
+  }
+  var openIdx=mm.index+mm[0].length-1;
+  var depth=1,i=openIdx+1;
+  for(;i<css.length;i++){
+    if(css[i]==='{')depth++;
+    else if(css[i]==='}'){depth--;if(depth===0)break;}
+  }
+  var closeIdx=i;
+  var inner=css.slice(openIdx+1,closeIdx);
+  var newInner=patchBlock(inner,sel,patches);
+  return css.slice(0,openIdx+1)+newInner+css.slice(closeIdx);
+}
+
+/* 괄호 주석 컨트롤 */
+document.getElementById('ckComment').addEventListener('change',function(){
+  document.getElementById('commentControls').style.display=this.checked?'flex':'none';
+  document.getElementById('commentBadge').style.display=this.checked?'none':'inline-block';
+  updateEpCommentPreview();
+});
+document.getElementById('epCommentFS').addEventListener('input',function(){
+  document.getElementById('lblEpCommentFS').textContent=this.value+'%';
+  updateEpCommentPreview();
+});
+document.getElementById('epCommentColor').addEventListener('input',function(){
+  document.getElementById('epCommentColorHex').value=this.value;
+  updateEpCommentPreview();
+});
+document.getElementById('epCommentColorHex').addEventListener('input',function(){
+  if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('epCommentColor').value=this.value;updateEpCommentPreview();}
+});
+document.getElementById('epCommentColorDark').addEventListener('input',function(){
+  document.getElementById('epCommentColorHexDark').value=this.value;
+  updateEpCommentPreview();
+});
+document.getElementById('epCommentColorHexDark').addEventListener('input',function(){
+  if(/^#[0-9a-fA-F]{6}$/.test(this.value)){document.getElementById('epCommentColorDark').value=this.value;updateEpCommentPreview();}
+});
+function updateEpCommentPreview(){
+  var fs=document.getElementById('epCommentFS').value;
+  var color=document.getElementById('epCommentColor').value;
+  var colorDark=document.getElementById('epCommentColorDark').value;
+  var el=document.getElementById('epCommentPreview');
+  if(el){el.style.fontSize=fs+'%';el.style.color=color;}
+  var eld=document.getElementById('epCommentPreviewDark');
+  if(eld){eld.style.fontSize=fs+'%';eld.style.color=colorDark;}
+}
+
+/* 빈 줄(공백 단락) 간격 컨트롤 */
+document.getElementById('ckBlankLine').addEventListener('change',function(){
+  document.getElementById('blankLineControls').style.display=this.checked?'flex':'none';
+  document.getElementById('blankLineBadge').style.display=this.checked?'none':'inline-block';
+  updateEpBlankPreview();
+});
+document.querySelectorAll('input[name="blankMode"]').forEach(function(r){
+  r.addEventListener('change',function(){
+    var isHeight=document.getElementById('blankModeHeight').checked;
+    document.getElementById('blankHeightGroup').style.display=isHeight?'flex':'none';
+    document.getElementById('blankRemoveGroup').style.display=isHeight?'none':'flex';
+  });
+});
+document.getElementById('epBlankH').addEventListener('input',function(){
+  document.getElementById('lblEpBlankH').textContent=parseFloat(this.value).toFixed(1)+'em';
+  updateEpBlankPreview();
+});
+function updateEpBlankPreview(){
+  var h=document.getElementById('epBlankH').value;
+  var el=document.getElementById('epBlankPreview');
+  if(el)el.style.lineHeight=h+'em';
+}
+
+document.getElementById('btnEpubSave').addEventListener('click',async function(){
+  if(!epubZip){toast('먼저 EPUB 파일을 선택하세요','err');return;}
+  var btn=this;btn.disabled=true;btn.textContent='처리 중...';
+  function epProg(pct,lbl){
+    var w=document.getElementById('epProgWrap');w.style.display='block';
+    document.getElementById('epProgFill').style.width=pct+'%';
+    document.getElementById('epProgLbl').textContent=lbl||'';
+    if(pct>=100)setTimeout(function(){w.style.display='none';},900);
+  }
+  try{
+    /* 작업용 zip 복사 (원본 보존) */
+    var workBlob=await epubZip.generateAsync({type:'blob',mimeType:'application/epub+zip'});
+    var workZip=await JSZip.loadAsync(workBlob);
+
+    epProg(8,'표지 비율 수정...');
+    if(document.getElementById('ckCoverFix').checked){
+      await fixCoverAspectRatio(workZip);
+    }
+
+    epProg(20,'회차 분리 처리...');
+    if(document.getElementById('ckSplit').checked){
+      var splitResult=await splitChapters(workZip);
+      if(splitResult.skipped){
+        toast('이미 분리된 파일입니다 ('+splitResult.count+'개 챕터)','wrn');
+      } else {
+        document.getElementById('splitInfo').style.display='block';
+        document.getElementById('splitInfo').textContent='✓ '+splitResult.count+'개 챕터로 분리 완료';
+      }
+    }
+
+    epProg(35,'설정 읽기...');
+    var useBody   =document.getElementById('ckBody').checked;
+    var useH3Color=document.getElementById('ckH3Color').checked;
+    var useH3Align=document.getElementById('ckH3Center').checked;
+    var useH3Bold =document.getElementById('ckH3Bold').checked;
+    var useH3Dim  =document.getElementById('ckH3Detail').checked;
+    var useScColor=document.getElementById('ckScColor').checked;
+    var useScAlign=document.getElementById('ckScCenter').checked;
+    var useScDim  =document.getElementById('ckScDetail').checked;
+    var useComment=document.getElementById('ckComment').checked;
+    var useBlankLine=document.getElementById('ckBlankLine').checked;
+
+    epProg(45,'원본 CSS 읽기...');
+    /* CSS 파일 탐색 — 실제 챕터 xhtml이 <link>로 참조하는 CSS를 찾는다.
+       (style.css/stylesheet.css라는 이름이 아니어도, 예: css/ui.css 등도 찾아낸다) */
+    var cssPath=null;
+    var sampleHtmlPath=null;
+    workZip.forEach(function(p){
+      if(!sampleHtmlPath&&/\.(xhtml|html|htm)$/i.test(p)&&!/cover|title|nav/i.test(p))sampleHtmlPath=p;
+    });
+    if(sampleHtmlPath){
+      var sampleHtml=await workZip.file(sampleHtmlPath).async('string');
+      var linkM=sampleHtml.match(/<link[^>]+href=["']([^"']+\.css)["']/i);
+      if(linkM){
+        var baseDir=sampleHtmlPath.substring(0,sampleHtmlPath.lastIndexOf('/')+1);
+        try{
+          var resolved=new URL(linkM[1],'https://x/'+baseDir).pathname.replace(/^\//,'');
+          if(workZip.file(resolved))cssPath=resolved;
+        }catch(e){}
+      }
+    }
+    if(!cssPath){
+      /* 위에서 못 찾은 경우를 위한 보완 — zip 안의 .css 파일을 아무거나 탐색 */
+      workZip.forEach(function(rp){if(/\.css$/i.test(rp)&&!cssPath)cssPath=rp;});
+    }
+    var css='';
+    if(cssPath)css=await workZip.file(cssPath).async('string');
+
+    epProg(58,'CSS 병합...');
+    var patched=css;
+
+    if(useBody){
+      var bm=document.getElementById('epBodyMargin').value;
+      var lh=document.getElementById('epLineHeight').value;
+      var pt=document.getElementById('epPMarginT').value;
+      var pb=document.getElementById('epPMarginB').value;
+      patched=patchBlock(patched,'body',{'line-height':lh,'margin':'0 '+bm+'em'});
+      /* p 자체의 문단 간격(위/아래 마진) 적용. 기존 padding으로 간격을 주던 원본 스타일과
+         겹쳐서 이중으로 벌어지지 않도록 padding은 0으로 정리한다 */
+      patched=patchBlock(patched,'p',{'margin':pt+'em 0 '+pb+'em','padding':'0'});
+      /* body에 줄높이를 줘도 .aegix 같은 래퍼 class가 자체 line-height/문단 스타일을
+         갖고 있으면 그게 우선 적용되므로, 그런 래퍼 class와 그 안의 p도 함께 패치한다 */
+      var wrapClass=sampleHtml?detectContentWrapClass(sampleHtml):null;
+      if(wrapClass){
+        patched=patchBlock(patched,'.'+wrapClass,{'line-height':lh});
+        patched=patchBlock(patched,'.'+wrapClass+' p',{'margin':pt+'em 0 '+pb+'em','padding':'0'});
+        toast('본문 줄높이/문단 간격 — .'+wrapClass+' 클래스에도 적용됨','ok');
+      }
+    }
+
+    var h3patches={};
+    if(useH3Color) h3patches['color']=document.getElementById('epH3Color').value+'!important';
+    if(useH3Align){
+      h3patches['text-align']='center!important';
+      h3patches['text-align-last']='center!important';
+    }
+    if(useH3Dim){
+      h3patches['font-size']=document.getElementById('epH3FS').value+'em!important';
+      h3patches['margin']=document.getElementById('epH3MT').value+'em 0 '+document.getElementById('epH3MB').value+'em!important';
+    }
+    if(useH3Bold) h3patches['font-weight']='bold!important';
+    /* 실제 제목에 쓰인 heading 태그 감지 — 사이트에 따라 h3 대신 h4 등을 쓰는 경우,
+       'h3'로 고정 패치하면 아무 효과 없는 빈 규칙만 추가되고 진짜 제목은 안 바뀐다 */
+    var titleStruct=sampleHtml?detectTitleStructure(sampleHtml):{boxClasses:[],tag:'h3'};
+    var titleTag=titleStruct.tag;
+    if(Object.keys(h3patches).length>0){
+      patched=patchBlock(patched,titleTag,h3patches);
+      if(titleTag!=='h3') toast('이 책의 제목 태그는 '+titleTag+'로 감지되어 그쪽에 적용됨','ok');
+    }
+
+    /* 제목을 감싸는 'header' 박스가 고정 height/padding이나 padding-left:62% 같은
+       비대칭 레이아웃을 갖고 있으면 제목 자체의 마진/정렬 변경이 무력화되거나 화면 중앙이
+       아닌 다른 위치에 정렬된 것처럼 보인다 — 디테일/정렬을 직접 수정할 때는 그 박스도 정리 */
+    var titleBoxClasses=titleStruct.boxClasses;
+    if(titleBoxClasses.length&&(useH3Dim||useH3Align)){
+      titleBoxClasses.forEach(function(cls){
+        var boxPatches={};
+        if(useH3Dim){
+          boxPatches['height']='auto!important';
+          boxPatches['padding-top']='0!important';
+          boxPatches['padding-bottom']='0!important';
+        }
+        if(useH3Align){
+          boxPatches['text-align']='center!important';
+          boxPatches['text-align-last']='center!important';
+          boxPatches['padding-left']='0!important';
+          boxPatches['padding-right']='0!important';
+        }
+        patched=patchBlock(patched,'.'+cls,boxPatches);
+      });
+      toast('제목 박스(.'+titleBoxClasses.join(' .')+') 레이아웃도 함께 정리됨','ok');
+    }
+
+    /* 장면전환·괄호주석 클래스 자동 감지 — 언정이 만들지 않은(.scene/.comment가 아닌) EPUB도 지원 */
+    var htmlPathsAll=[];
+    workZip.forEach(function(p){if(/\.(xhtml|html|htm)$/i.test(p)&&!/cover|title|nav/i.test(p))htmlPathsAll.push(p);});
+    var sceneClass=null,commentClass=null;
+    for(var di=0;di<Math.min(htmlPathsAll.length,5)&&(!sceneClass||!commentClass);di++){
+      var dHtml=await workZip.file(htmlPathsAll[di]).async('string');
+      if(!sceneClass){
+        var sm=dHtml.match(/<(div|p|span)[^>]*class=["']([^"']+)["'][^>]*>\s*((?:[\*\-—–·•◆■○●♦※]\s*){2,})<\/\1>/);
+        if(sm)sceneClass=sm[2];
+      }
+      if(!commentClass){
+        var cm=dHtml.match(/<span[^>]*class=["']([^"']+)["'][^>]*>\([^()]{1,200}\)<\/span>/);
+        if(cm)commentClass=cm[1];
+      }
+    }
+    if(!sceneClass)sceneClass='scene';
+    if(!commentClass)commentClass='comment';
+
+    var scPatches={};
+    if(useScColor) scPatches['color']=document.getElementById('epScColor').value+'!important';
+    if(useScAlign) scPatches['text-align']='center!important';
+    if(useScDim){
+      scPatches['font-size']=document.getElementById('epScFS').value+'em!important';
+      scPatches['margin']=document.getElementById('epScM').value+'em 0!important';
+    }
+    if(Object.keys(scPatches).length>0){
+      patched=patchBlock(patched,'.'+sceneClass,scPatches);
+      if(sceneClass!=='scene')toast('장면전환 클래스 감지: .'+sceneClass,'ok');
+      /* CSS만 지정해도 실제 본문의 "***"/"* * *" 등에 class가 없으면 적용이 안 되므로,
+         class 없이 기호만 들어있는 <p>/<div>를 찾아 자동으로 class를 붙여준다 */
+      var sceneBreakRe=new RegExp('<(p|div)(?![^>]*class=)([^>]*)>(\\s*(?:<span[^>]*>)?\\s*(?:[\\*\\-—–·•◆■○●♦※]\\s*){3,}\\s*(?:<\\/span>)?\\s*(?:<br\\s*\\/?>)?\\s*)<\\/\\1>','gi');
+      epProg(62,'장면전환 표시 자동 태깅 ('+htmlPathsAll.length+'개)...');
+      var sceneCnt=0;
+      for(var si=0;si<htmlPathsAll.length;si++){
+        var sp=htmlPathsAll[si];
+        var ss=await workZip.file(sp).async('string');
+        var ssNew=ss.replace(sceneBreakRe,function(m,tag,attrs,inner){
+          sceneCnt++;
+          return '<'+tag+' class="'+sceneClass+'"'+attrs+'>'+inner+'</'+tag+'>';
+        });
+        if(ssNew!==ss)workZip.file(sp,ssNew);
+        if(si%20===0)await tick();
+      }
+      if(sceneCnt)toast('장면전환 표시 '+sceneCnt+'개에 class 자동 적용됨','ok');
+    }
+
+    /* 괄호 주석 */
+    if(useComment){
+      var cFS=document.getElementById('epCommentFS').value;
+      var cColor=document.getElementById('epCommentColor').value;
+      var cColorDark=document.getElementById('epCommentColorDark').value;
+      patched=patchBlock(patched,'.'+commentClass,{'font-size':cFS+'%!important','color':cColor+'!important'});
+      patched=patchDarkBlock(patched,'.'+commentClass,{'color':cColorDark+'!important'});
+      /* 회차 제목(h1~h4) 안에 (1), (2)처럼 같은 .comment 클래스가 같이 쓰이는 epub이 있어서,
+         본문에만 효과가 가게 제목 안에서는 강제로 원래 제목 스타일을 그대로 물려받게 함 */
+      ['h1','h2','h3','h4'].forEach(function(tag){
+        patched=patchBlock(patched,tag+' .'+commentClass,{'font-size':'inherit!important','color':'inherit!important'});
+      });
+      if(commentClass!=='comment'){
+        toast('괄호 주석 클래스 감지: .'+commentClass,'ok');
+      }else{
+        /* 괄호주석에 해당하는 class가 전혀 없는 EPUB만 새로 ( ) 패턴을 span으로 감싼다 */
+        epProg(65,'괄호 주석 HTML 처리 ('+htmlPathsAll.length+'개)...');
+        for(var hi=0;hi<htmlPathsAll.length;hi++){
+          var hp=htmlPathsAll[hi];
+          var hs=await workZip.file(hp).async('string');
+          if(hs.indexOf('class="comment"')!==-1||hs.indexOf("class='comment'")!==-1)continue;
+          /* HTML 태그·속성값(style="rgb(...)") 안은 건드리지 않고
+             텍스트 노드에 있는 괄호만 span으로 감싼다.
+             [^()<>] 로 꺾쇠도 제외해서 태그 경계를 절대 넘지 못하게 함 */
+          hs=hs.replace(/<[^>]*>|(\([^()<>]{1,200}\))/g,function(m,g){
+            return g?'<span class="comment">'+g+'</span>':m;
+          });
+          workZip.file(hp,hs);
+          if(hi%20===0)await tick();
+        }
+      }
+    }
+
+    /* 빈 줄(공백 단락) 정리 — <p><br/></p> 형태가 앞뒤 문단 마진과 겹쳐
+       간격이 과하게 벌어지는 것을 처리. '높이만 조절'은 .blankline 클래스로
+       분리해 margin:0 + 원하는 높이만 적용(그래도 일반 문단 간격보단 넓음),
+       '완전히 제거'는 빈 줄 자체를 삭제해 일반 문단 간격과 동일하게 만듦 */
+    if(useBlankLine){
+      var blankMode=document.querySelector('input[name="blankMode"]:checked').value;
+      var blankRe=/<p(?![^>]*class=)([^>]*)>\s*(?:<br\s*\/?>|&nbsp;|\u00a0)\s*<\/p>/gi;
+      if(blankMode==='height'){
+        var blankH=document.getElementById('epBlankH').value;
+        patched=patchBlock(patched,'.blankline',{'margin':'0!important','line-height':blankH+'em!important'});
+      }
+      epProg(68,'빈 줄 정리 ('+htmlPathsAll.length+'개)...');
+      var blankCnt=0;
+      for(var bi=0;bi<htmlPathsAll.length;bi++){
+        var bp=htmlPathsAll[bi];
+        var bs=await workZip.file(bp).async('string');
+        var bsNew=bs.replace(blankRe,function(m,attrs){
+          blankCnt++;
+          return blankMode==='remove'?'':'<p class="blankline"'+attrs+'><br/></p>';
+        });
+        if(bsNew!==bs)workZip.file(bp,bsNew);
+        if(bi%20===0)await tick();
+      }
+      if(blankCnt)toast('빈 줄 '+blankCnt+'개 '+(blankMode==='remove'?'삭제됨':'정리됨'),'ok');
+    }
+
+    /* 제목 밑 구분선(hr) 제거 */
+    if(document.getElementById('ckHrRemove').checked){
+      epProg(70,'구분선(hr) 제거...');
+      for(var hri=0;hri<htmlPathsAll.length;hri++){
+        var hrp=htmlPathsAll[hri];
+        var hrs=await workZip.file(hrp).async('string');
+        if(/<hr\b/i.test(hrs)){
+          TITLE_HR_RE.lastIndex=0;
+          var newHrs=hrs.replace(TITLE_HR_RE,'$1');
+          if(newHrs!==hrs)workZip.file(hrp,newHrs);
+        }
+        if(hri%20===0)await tick();
+      }
+    }
+
+    if(!css){
+      patched='body{line-height:1.75;font-family:serif;}\np{margin:.6em 0 1.4em;}\n'+patched;
+    }
+
+    if(cssPath){workZip.file(cssPath,patched);}
+    else{workZip.file('OEBPS/style.css',patched);}
+
+    epProg(85,'압축 중...');
+    var blob=await workZip.generateAsync({type:'blob',mimeType:'application/epub+zip',compression:'DEFLATE',compressionOptions:{level:6}});
+    epProg(100,'완료!');
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');a.href=url;a.download=epubFilename+'_수정.epub';
+    document.body.appendChild(a);a.click();
+    setTimeout(function(){URL.revokeObjectURL(url);document.body.removeChild(a);},8000);
+    toast('"'+epubFilename+'_수정.epub" 저장됨','ok');
+  }catch(e){console.error(e);toast('오류: '+e.message,'err');}
+  finally{btn.disabled=false;btn.textContent='수정된 EPUB 저장하기';}
+});
+
+/* 모든 슬라이더 옆 숫자 입력칸 동기화 — id가 'X' / 'XNum' 쌍으로 된 모든 input을 찾아
+   양방향으로 값을 맞춰준다.
+   ※ 타이핑하는 도중(input 이벤트)에는 절대 min/max로 강제 보정하지 않는다 — 그렇게 하면
+      예를 들어 min이 60일 때 "75"를 입력하려고 첫 글자 "7"을 치는 순간 7<60이라 바로 60으로
+      되돌려져서 두 자리 숫자를 입력할 수 없고, 지우는 것도 같은 이유로 막히게 된다.
+      그래서 보정(min/max clamp)은 입력을 다 마친 시점(blur 또는 Enter)에만 한다. */
+(function(){
+  document.querySelectorAll('input[type="range"]').forEach(function(rng){
+    var num=document.getElementById(rng.id+'Num');
+    if(!num)return;
+    num.value=rng.value;
+
+    /* 슬라이더를 드래그하면 숫자칸도 같이 갱신 (숫자칸에 타이핑 중일 때는 건드리지 않음) */
+    rng.addEventListener('input',function(){
+      if(document.activeElement!==num) num.value=rng.value;
+    });
+
+    /* 입력을 마친 시점(포커스 아웃/Enter)에만 min/max로 정리하고 슬라이더·미리보기에 반영 */
+    function commit(){
+      var v=parseFloat(num.value);
+      var min=parseFloat(rng.min), max=parseFloat(rng.max);
+      if(isNaN(v)) v=parseFloat(rng.value); /* 빈 칸으로 두고 나가면 원래 슬라이더 값으로 복원 */
+      if(!isNaN(min)&&v<min)v=min;
+      if(!isNaN(max)&&v>max)v=max;
+      num.value=v;
+      rng.value=v;
+      rng.dispatchEvent(new Event('input',{bubbles:true}));
+    }
+    num.addEventListener('blur',commit);
+    num.addEventListener('keydown',function(e){
+      if(e.key==='Enter'){e.preventDefault();commit();num.blur();}
+    });
+  });
+})();
+</script>
+</body>
+</html>
