@@ -174,9 +174,29 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
         <div id="toc-preview" style="display:flex;flex-direction:column;gap:3px;max-height:300px;overflow-y:auto;"></div>
         <div style="margin-top:9px;display:flex;flex-wrap:wrap;gap:6px;">
           <button class="btn btn-secondary" onclick="checkSequence()" style="padding:8px;flex:1;">회차 검사</button>
-          <button class="btn btn-ghost btn-sm" onclick="cleanCoverCopyright()" style="flex:1;padding:8px;font-size:10px;" title="표지는 첫 파일만 유지, 판권은 전체 삭제">🧹 표지·판권 정리</button>
+          <button class="btn btn-ghost btn-sm" onclick="openCoverCleanPanel()" style="flex:1;padding:8px;font-size:10px;" title="표지·판권으로 감지된 항목을 검토 후 선택 삭제">🧹 표지·판권 정리</button>
         </div>
         <div class="seq-result" id="seq-result" style="margin-top:8px;"></div>
+        <div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:6px;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx);cursor:pointer;">
+            <input type="checkbox" id="chk-auto-heading"/> 회차 코드 없는 파일에 헤딩 자동 삽입 (번호는 파일명에서 추출)
+          </label>
+          <button class="btn btn-ghost btn-sm" onclick="autoInsertMissingHeadings()" style="padding:7px;font-size:10px;">🩹 헤딩 보정 실행</button>
+        </div>
+      </div>
+
+      <div class="card" id="cover-clean-panel" style="display:none;">
+        <div class="card-hd" style="margin-bottom:10px;">
+          <span class="snum">🧹</span> 표지·판권 정리 검토
+          <span style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--mu);cursor:pointer;font-family:'DM Mono',monospace;">
+              <input type="checkbox" id="cover-clean-select-all" checked onchange="document.querySelectorAll('.cover-clean-chk').forEach(function(c){c.checked=this.checked;}.bind(this))"/>
+              전체 선택
+            </label>
+            <button class="btn btn-ghost btn-sm" style="color:var(--er);" onclick="deleteCheckedCoverCleanItems()">선택 삭제</button>
+          </span>
+        </div>
+        <div id="cover-clean-list" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;"></div>
       </div>
 
       <div class="card" id="img-panel" style="display:none;">
@@ -976,45 +996,153 @@ function renderImgPanel(){
   });
 }
 
-function cleanCoverCopyright(){
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 표지·판권 정리 — 검토 후 선택 삭제
+// 기존엔 첫 표지만 남기고 나머지 표지/판권 파일을 바로 삭제했지만,
+// 중간에 표지가 바뀌는 시리즈도 있어서 체크박스로 검토 후 삭제하도록 변경.
+// 또한 챕터 "본문 안에" 끼어있는 표지성 <img> 태그(파일 전체가 아니라 일부)도 함께 감지.
+// ══════════════════════════════════════════════════════════════
+function detectInlineCoverImgs(text){
+  if(!text)return[];
+  var out=[];
+  var re=/<img\b[^>]*>/gi,m;
+  while((m=re.exec(text))){
+    var tag=m[0];
+    var isCover=/alt\s*=\s*["']cover["']/i.test(tag)||/data-is-cover\s*=/i.test(tag)||/data-name\s*=\s*["']cover/i.test(tag)||/(?:src|data-src)\s*=\s*["'][^"']*cover[^"']*["']/i.test(tag);
+    if(isCover)out.push({index:m.index,len:tag.length,tag:tag});
+  }
+  return out;
+}
+function openCoverCleanPanel(){
   if(!S.files.length){toast('파일이 없습니다','err');return;}
-  var htmlFiles=S.files.filter(function(f){return f.text&&f.text.trim().startsWith('<');});
-  if(!htmlFiles.length){toast('HTML/EPUB 파일이 없습니다','err');return;}
-
-  var toDelete=[];
-  var firstCoverFound=false;
-  var coverDelCount=0,copyDelCount=0;
-
+  var items=[];
   S.files.forEach(function(f,i){
     if(!f.text||!f.text.trim().startsWith('<'))return;
     var pt=detectPageType(f.text);
-    if(pt==='cover'){
-      if(!firstCoverFound){firstCoverFound=true;}
-      else{toDelete.push(i);coverDelCount++;}
-    }else if(pt==='copyright'){
-      toDelete.push(i);copyDelCount++;
+    if(pt==='cover'){items.push({idx:i,type:'cover-file',name:f.name,label:'표지 파일 (전체)'});}
+    else if(pt==='copyright'){items.push({idx:i,type:'copyright-file',name:f.name,label:'판권 파일 (전체)'});}
+    else{
+      var inline=detectInlineCoverImgs(f.text);
+      inline.forEach(function(hit){items.push({idx:i,type:'cover-inline',name:f.name,label:'본문 내 표지 이미지',index:hit.index,len:hit.len,tag:hit.tag});});
     }
   });
-
-  if(!toDelete.length){
-    toast('삭제할 표지·판권 파일 없음','ok');return;
-  }
-
-  // 뒤에서부터 삭제 (인덱스 유지)
-  toDelete.sort(function(a,b){return b-a;});
-  toDelete.forEach(function(idx){
+  var panel=document.getElementById('cover-clean-panel');
+  var list=document.getElementById('cover-clean-list');
+  if(!items.length){toast('감지된 표지·판권 항목이 없습니다','ok');panel.style.display='none';return;}
+  S.coverCleanItems=items;
+  document.getElementById('cover-clean-select-all').checked=true;
+  list.innerHTML='';
+  items.forEach(function(item,rowIdx){
+    var row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:10px;padding:7px 9px;background:var(--s2);border:1px solid var(--bd);border-radius:8px;';
+    var chkWrap=document.createElement('label');
+    chkWrap.style.cssText='display:flex;align-items:center;cursor:pointer;flex-shrink:0;';
+    var chk=document.createElement('input');
+    chk.type='checkbox';chk.className='cover-clean-chk';chk.checked=true;chk.dataset.rowIdx=rowIdx;
+    chk.style.cssText='width:14px;height:14px;cursor:pointer;accent-color:var(--ac);';
+    chkWrap.appendChild(chk);row.appendChild(chkWrap);
+    var badge=document.createElement('span');
+    badge.style.cssText='font-size:9px;padding:2px 6px;border-radius:4px;background:'+(item.type==='copyright-file'?'#7a3b3b':'#3b5a7a')+';color:#fff;flex-shrink:0;';
+    badge.textContent=item.label;row.appendChild(badge);
+    var label=document.createElement('span');
+    label.style.cssText='flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    label.textContent=item.name.replace(/\.\w+$/,'');
+    row.appendChild(label);
+    list.appendChild(row);
+  });
+  panel.style.display='block';
+  panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function deleteCheckedCoverCleanItems(){
+  var items=S.coverCleanItems||[];
+  var checks=document.querySelectorAll('.cover-clean-chk');
+  var checkedRows=[];
+  checks.forEach(function(c){if(c.checked)checkedRows.push(items[parseInt(c.dataset.rowIdx)]);});
+  if(!checkedRows.length){toast('선택된 항목이 없습니다','err');return;}
+  var wholeFileDel=[],inlineByIdx={};
+  checkedRows.forEach(function(item){
+    if(item.type==='cover-inline'){(inlineByIdx[item.idx]=inlineByIdx[item.idx]||[]).push(item);}
+    else{wholeFileDel.push(item.idx);}
+  });
+  // 본문 내 표지 이미지 태그 제거 (같은 파일에 여러 개면 뒤에서부터 잘라내어 인덱스 안 꼬이게)
+  Object.keys(inlineByIdx).forEach(function(k){
+    var idx=parseInt(k);
+    var hits=inlineByIdx[k].slice().sort(function(a,b){return b.index-a.index;});
+    var text=S.files[idx].text;
+    hits.forEach(function(h){text=text.slice(0,h.index)+text.slice(h.index+h.len);});
+    S.files[idx].text=text;
+  });
+  // 파일 전체 삭제 (표지/판권 파일) — 뒤에서부터
+  wholeFileDel=Array.from(new Set(wholeFileDel)).sort(function(a,b){return b-a;});
+  wholeFileDel.forEach(function(idx){
     var newImg={},newToc={};
     Object.keys(S.imgMap).forEach(function(k){var ki=parseInt(k);if(ki<idx)newImg[ki]=S.imgMap[ki];else if(ki>idx)newImg[ki-1]=S.imgMap[ki];});
     Object.keys(S.tocOverrides).forEach(function(k){var ki=parseInt(k);if(ki<idx)newToc[ki]=S.tocOverrides[ki];else if(ki>idx)newToc[ki-1]=S.tocOverrides[ki];});
     S.imgMap=newImg;S.tocOverrides=newToc;
     S.files.splice(idx,1);
   });
+  document.getElementById('cover-clean-panel').style.display='none';
+  renderList();renderToc();renderImgPanel();applyAutoCompletion();
+  toast(checkedRows.length+'개 항목 정리됨','ok');
+}
 
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 회차 코드(헤딩) 자동 삽입
+// 체크박스가 켜져 있을 때만 동작. 배치 안의 다른 파일에서 헤딩 스타일을 찾아
+// 그 구조를 그대로 복제하되, 번호만 헤딩이 없는 파일의 파일명에서 추출해 채운다.
+// (소제목은 원본에 없으므로 복원 불가 — 번호만 채우고 비워둠)
+// ══════════════════════════════════════════════════════════════
+function findHeadingMarker(rawHtml){
+  if(!rawHtml||!rawHtml.trim().startsWith('<'))return null;
+  var tmp=document.createElement('div');tmp.innerHTML=rawHtml;
+  var els=tmp.querySelectorAll('h1,h2,h3,h4,h5,h6,p,span');
+  for(var i=0;i<els.length;i++){
+    var el=els[i];
+    var t=(el.textContent||'').trim();
+    if(!t||t.length>60)continue;
+    var mHwa=t.match(/^(\d{1,4})\s*화$/);
+    if(mHwa)return{outerHTML:el.outerHTML,style:'hwa',num:mHwa[1]};
+    var mDot=t.match(/^(\d{1,4})\s*[\.\)]\s*(.{0,40})$/);
+    if(mDot&&el.children.length===0&&/^H[1-4]$/.test(el.tagName))return{outerHTML:el.outerHTML,style:'dot',num:mDot[1],sub:mDot[2]};
+  }
+  return null;
+}
+function extractFileNumOnly(name){
+  var stem=name.replace(/\.\w+$/,'');
+  var m=stem.match(/\d+/);
+  return m?m[0]:null;
+}
+function autoInsertMissingHeadings(){
+  if(!document.getElementById('chk-auto-heading').checked){toast('체크박스를 먼저 켜주세요','err');return;}
+  var htmlFiles=S.files.filter(function(f){return f.text&&f.text.trim().startsWith('<');});
+  if(!htmlFiles.length){toast('HTML 파일이 없습니다','err');return;}
+  var reference=null;
+  for(var i=0;i<S.files.length;i++){
+    var found=findHeadingMarker(S.files[i].text);
+    if(found){reference=found;break;}
+  }
+  if(!reference){toast('참고할 헤딩 스타일을 찾지 못했습니다','err');return;}
+  var inserted=0,skipped=0;
+  S.files.forEach(function(f){
+    if(!f.text||!f.text.trim().startsWith('<'))return;
+    if(findHeadingMarker(f.text))return; // 이미 헤딩 있음
+    var num=extractFileNumOnly(f.name);
+    if(!num){skipped++;return;}
+    var headingHtml;
+    if(reference.style==='hwa'){
+      headingHtml=reference.outerHTML.replace(reference.num+'화',num+'화');
+    }else{
+      // '39. 호기심의 가치' 형태 — 소제목 복원 불가하므로 번호만 채우고 비워둠
+      var tagMatch=reference.outerHTML.match(/^<([a-zA-Z0-9]+)([^>]*)>/);
+      var tagName=tagMatch?tagMatch[1]:'h2';
+      var tagAttrs=tagMatch?tagMatch[2]:'';
+      headingHtml='<'+tagName+tagAttrs+'>'+num+'. </'+tagName+'>';
+    }
+    f.text=headingHtml+f.text;
+    inserted++;
+  });
   renderList();renderToc();renderImgPanel();
-  var msg='';
-  if(coverDelCount)msg+='표지 '+coverDelCount+'개 삭제\n';
-  if(copyDelCount)msg+='판권 '+copyDelCount+'개 삭제';
-  toast(msg.trim(),'ok');
+  toast('헤딩 삽입 '+inserted+'개'+(skipped?', 번호 인식 실패 '+skipped+'개':''),inserted?'ok':'err');
 }
 
 function buildFilename(){
