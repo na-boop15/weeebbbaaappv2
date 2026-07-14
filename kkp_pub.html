@@ -182,6 +182,9 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
             <input type="checkbox" id="chk-auto-heading"/> 회차 코드 없는 파일에 헤딩 자동 삽입 (번호는 파일명에서 추출)
           </label>
           <button class="btn btn-ghost btn-sm" onclick="autoInsertMissingHeadings()" style="padding:7px;font-size:10px;">🩹 헤딩 보정 실행</button>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx);cursor:pointer;margin-top:2px;">
+            <input type="checkbox" id="chk-title-own-page" onchange="renderToc()"/> 회차 제목을 본문과 별도 페이지로 (파일은 그대로, CSS로 페이지만 나눔)
+          </label>
         </div>
       </div>
 
@@ -253,6 +256,10 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
               <input type="file" id="cover-input" accept="image/*"/>
             </label>
             <button class="btn btn-ghost" style="width:100%;" onclick="openCoverGoogleSearch()">🔍 표지 구글 검색</button>
+            <div style="display:flex;gap:5px;">
+              <input type="text" id="cover-url-input" placeholder="검색된 이미지 주소 붙여넣기" style="flex:1;min-width:0;padding:6px 8px;border:1.5px solid var(--bd);border-radius:7px;font-size:11px;background:var(--surf);color:var(--tx);"/>
+              <button class="btn btn-ghost btn-sm" style="flex-shrink:0;padding:6px 9px;font-size:11px;" onclick="applyCoverFromUrl()">가져오기</button>
+            </div>
             <button class="btn btn-ghost" style="width:100%;" onclick="clearCover()">표지 제거</button>
           </div>
         </div>
@@ -283,7 +290,7 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
         <div style="margin-top:9px;padding:9px 11px;background:var(--s2);border:1px solid var(--bd);border-radius:8px;display:flex;align-items:flex-start;gap:8px;">
           <input type="checkbox" id="chk-extract-css" checked style="width:15px;height:15px;margin-top:2px;flex-shrink:0;accent-color:var(--ac);cursor:pointer;"/>
           <div>
-            <div style="font-size:12px;font-weight:600;color:var(--tx);cursor:pointer;" onclick="document.getElementById('chk-extract-css').click()">CSS 파일 없을 때 파일 내 스타일 자동 추출</div>
+            <div style="font-size:12px;font-weight:600;color:var(--tx);cursor:pointer;" onclick="document.getElementById('chk-extract-css').click()">파일 내 스타일 자동 추출 (업로드한 CSS와 합쳐짐, 겹치면 업로드 CSS 우선)</div>
             <div style="font-size:10px;color:var(--mu);margin-top:2px;">HTML 파일의 &lt;style&gt; 코드를 모아 중복 제거 후 적용. CSS 파일 추가 시엔 비활성화.</div>
           </div>
         </div>
@@ -812,12 +819,16 @@ function renderToc(){
     var isHtmlFile=f.text&&f.text.trim().startsWith('<');
     var pageType=isHtmlFile?detectPageType(f.text):null;
 
-    var tmpHAll=isHtmlFile?(function(){var t=document.createElement('div');t.innerHTML=f.text;return Array.from(t.querySelectorAll('h1,h2,h3'));})():[];
+    var titlePageToggleEl=document.getElementById('chk-title-own-page');
+    var segs=isHtmlFile?(function(){
+      var t=document.createElement('div');t.innerHTML=f.text;
+      return buildSegments(t,titlePageToggleEl?titlePageToggleEl.checked:false,stem);
+    })():[];
     var displayTitle;
     if(S.tocOverrides[i]!==undefined){
       displayTitle=S.tocOverrides[i];
     }else if(isHtmlFile){
-      displayTitle=tmpHAll.length>=2?stem:(tmpHAll.length===1?tmpHAll[0].textContent.trim():stem);
+      displayTitle=segs.length>=2?stem:(segs.length===1&&segs[0].title?segs[0].title:stem);
     }else{
       displayTitle=stem;
     }
@@ -854,11 +865,11 @@ function renderToc(){
       row.appendChild(badge2);
     }
 
-    // h태그 개수 배지
-    if(isHtmlFile&&tmpHAll.length>=2&&pageType===null){
+    // 분리될 파일 개수 배지
+    if(isHtmlFile&&segs.length>=2&&pageType===null){
       var hbadge=document.createElement('span');
       hbadge.style.cssText='font-size:10px;color:var(--ac);font-family:\'DM Mono\',monospace;flex-shrink:0;background:var(--acl);padding:1px 5px;border-radius:4px;';
-      hbadge.textContent='h×'+tmpHAll.length;
+      hbadge.textContent=segs.length+'개 파일로 분리';
       row.appendChild(hbadge);
     }
 
@@ -878,18 +889,16 @@ function renderToc(){
     row.appendChild(del);
     wrap.appendChild(row);
 
-    // 계층 목차: h태그가 2개 이상인 파일만 하위 목차로 펼쳐 보여줌 (전부 동등한 하위 항목)
-    if(isHtmlFile&&pageType===null&&tmpHAll.length>=2){
-      tmpHAll.forEach(function(h){
-        var level=parseInt(h.tagName[1]);// 1,2,3
+    // 계층 목차: 실제 분리될 파일이 2개 이상일 때만 하위 목차로 펼쳐 보여줌
+    if(isHtmlFile&&pageType===null&&segs.length>=2){
+      segs.forEach(function(seg){
         var subRow=document.createElement('div');
         subRow.className='toc-sub-row';
         subRow.style.cssText='display:flex;align-items:center;gap:4px;padding:2px 7px 2px 20px;';
         var arrow=document.createElement('span');arrow.className='toc-sub-arrow';arrow.textContent='└';
         var txt=document.createElement('span');
-        txt.className='toc-h'+level;
-        txt.style.cssText='font-size:'+(13-level)+'px;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;';
-        txt.textContent=h.textContent.trim();
+        txt.style.cssText='font-size:11px;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;';
+        txt.textContent=seg.title;
         subRow.appendChild(arrow);subRow.appendChild(txt);
         wrap.appendChild(subRow);
       });
@@ -1015,7 +1024,7 @@ function detectInlineCoverImgs(text){
   while((m=re.exec(text))){
     var tag=m[0];
     var isCover=/alt\s*=\s*["']cover["']/i.test(tag)||/data-is-cover\s*=/i.test(tag)||/data-name\s*=\s*["']cover/i.test(tag)||/(?:src|data-src)\s*=\s*["'][^"']*cover[^"']*["']/i.test(tag);
-    if(isCover)out.push({index:m.index,len:tag.length,tag:tag});
+    out.push({index:m.index,len:tag.length,tag:tag,looksCover:isCover});
   }
   return out;
 }
@@ -1050,16 +1059,19 @@ function openCoverCleanPanel(){
     else if(pt==='copyright'){items.push({idx:i,type:'copyright-file',name:f.name,label:'판권 파일 (전체)'});}
     else{
       var inline=detectInlineCoverImgs(f.text);
-      inline.forEach(function(hit){items.push({idx:i,type:'cover-inline',name:f.name,label:'본문 내 표지 이미지',index:hit.index,len:hit.len,tag:hit.tag});});
+      inline.forEach(function(hit){
+        if(hit.looksCover)items.push({idx:i,type:'cover-inline',name:f.name,label:'본문 내 표지 이미지',index:hit.index,len:hit.len,tag:hit.tag});
+        else items.push({idx:i,type:'illustration-inline',name:f.name,label:'삽화 이미지',index:hit.index,len:hit.len,tag:hit.tag});
+      });
       var copyInline=detectInlineCopyrightBlocks(f.text);
       copyInline.forEach(function(hit){items.push({idx:i,type:'copyright-inline',name:f.name,label:'본문 내 판권 정보',index:hit.index,len:hit.len,tag:hit.tag});});
     }
   });
   var panel=document.getElementById('cover-clean-panel');
   var list=document.getElementById('cover-clean-list');
-  if(!items.length){toast('감지된 표지·판권 항목이 없습니다','ok');panel.style.display='none';return;}
+  if(!items.length){toast('감지된 표지·판권·삽화 항목이 없습니다','ok');panel.style.display='none';return;}
   S.coverCleanItems=items;
-  document.getElementById('cover-clean-select-all').checked=true;
+  document.getElementById('cover-clean-select-all').checked=false;
   list.innerHTML='';
   items.forEach(function(item,rowIdx){
     var row=document.createElement('div');
@@ -1067,11 +1079,15 @@ function openCoverCleanPanel(){
     var chkWrap=document.createElement('label');
     chkWrap.style.cssText='display:flex;align-items:center;cursor:pointer;flex-shrink:0;';
     var chk=document.createElement('input');
-    chk.type='checkbox';chk.className='cover-clean-chk';chk.checked=true;chk.dataset.rowIdx=rowIdx;
+    chk.type='checkbox';chk.className='cover-clean-chk';
+    // 표지/판권으로 확실히 감지된 항목만 기본 체크(삭제 예정), 일반 삽화는 실수 삭제 방지를 위해 기본 미체크
+    chk.checked=(item.type!=='illustration-inline');
+    chk.dataset.rowIdx=rowIdx;
     chk.style.cssText='width:14px;height:14px;cursor:pointer;accent-color:var(--ac);';
     chkWrap.appendChild(chk);row.appendChild(chkWrap);
     var badge=document.createElement('span');
-    badge.style.cssText='font-size:9px;padding:2px 6px;border-radius:4px;background:'+((item.type==='copyright-file'||item.type==='copyright-inline')?'#7a3b3b':'#3b5a7a')+';color:#fff;flex-shrink:0;';
+    var badgeColor=(item.type==='copyright-file'||item.type==='copyright-inline')?'#7a3b3b':(item.type==='illustration-inline'?'#6b7280':'#3b5a7a');
+    badge.style.cssText='font-size:9px;padding:2px 6px;border-radius:4px;background:'+badgeColor+';color:#fff;flex-shrink:0;';
     badge.textContent=item.label;row.appendChild(badge);
     var label=document.createElement('span');
     label.style.cssText='flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
@@ -1090,7 +1106,7 @@ function deleteCheckedCoverCleanItems(){
   if(!checkedRows.length){toast('선택된 항목이 없습니다','err');return;}
   var wholeFileDel=[],inlineByIdx={};
   checkedRows.forEach(function(item){
-    if(item.type==='cover-inline'||item.type==='copyright-inline'){(inlineByIdx[item.idx]=inlineByIdx[item.idx]||[]).push(item);}
+    if(item.type==='cover-inline'||item.type==='copyright-inline'||item.type==='illustration-inline'){(inlineByIdx[item.idx]=inlineByIdx[item.idx]||[]).push(item);}
     else{wholeFileDel.push(item.idx);}
   });
   // 본문 내 표지 이미지 태그 제거 (같은 파일에 여러 개면 뒤에서부터 잘라내어 인덱스 안 꼬이게)
@@ -1209,6 +1225,37 @@ function clearCover(){
   S.coverData=null;
   document.getElementById('cover-thumb').innerHTML='📖';
   toast('표지 제거됨');
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 구글 이미지 검색 결과 URL을 붙여넣어 표지로 바로 적용
+// (구글 이미지에서 우클릭 → "이미지 주소 복사" 후 붙여넣기)
+// 사이트에 따라 CORS 정책으로 막힐 수 있음 — 이 경우 이미지를 기기에
+// 저장한 뒤 "🖼 이미지 선택"으로 업로드하는 방법을 안내한다.
+// ══════════════════════════════════════════════════════════════
+async function applyCoverFromUrl(){
+  var input=document.getElementById('cover-url-input');
+  var url=input.value.trim();
+  if(!url){toast('이미지 주소를 붙여넣어주세요','err');return;}
+  toast('이미지 가져오는 중...','ok');
+  try{
+    var res=await fetch(url,{mode:'cors'});
+    if(!res.ok)throw new Error('fetch failed');
+    var blob=await res.blob();
+    if(!blob.type.startsWith('image/'))throw new Error('not an image');
+    var mt=blob.type;
+    var ext=mt.includes('png')?'png':mt.includes('gif')?'gif':mt.includes('webp')?'webp':'jpg';
+    var reader=new FileReader();
+    reader.onload=function(ev){
+      S.coverData={b64:ev.target.result,ext:ext,mt:mt};
+      document.getElementById('cover-thumb').innerHTML='<img src="'+ev.target.result+'" style="width:100%;height:100%;object-fit:cover;border-radius:7px;" alt=""/>';
+      input.value='';
+      toast('표지 적용됨','ok');
+    };
+    reader.readAsDataURL(blob);
+  }catch(e){
+    toast('이 이미지는 브라우저 보안 정책(CORS)으로 직접 가져올 수 없어요. 이미지를 길게 눌러 저장한 뒤 "🖼 이미지 선택"으로 업로드해주세요','err');
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1476,13 +1523,6 @@ function updateExtractedCssPreview(){
   var hasManualCss=S.cssFiles.length>0;
   var chk=document.getElementById('chk-extract-css');
   var preview=document.getElementById('extracted-css-preview');
-  if(hasManualCss){
-    // CSS 파일 있으면 자동추출 비활성화 안내
-    chk.disabled=true;
-    preview.style.display='none';
-    chk.parentElement.parentElement.style.opacity='0.5';
-    return;
-  }
   chk.disabled=false;
   chk.parentElement.parentElement.style.opacity='1';
   if(!chk.checked||!S.files.length){preview.style.display='none';return;}
@@ -1490,10 +1530,37 @@ function updateExtractedCssPreview(){
   if(!extracted){preview.style.display='none';return;}
   var lines=extracted.split('\n').length;
   preview.style.display='block';
-  preview.textContent='✅ '+lines+'줄 추출됨\n\n'+extracted.slice(0,400)+(extracted.length>400?'\n…(이하 생략)':'');
+  preview.textContent='✅ 파일에서 '+lines+'줄 추출됨'+(hasManualCss?' — 업로드한 CSS 파일과 합쳐지며, 겹치는 속성은 업로드한 CSS가 우선 적용됩니다.':'')+'\n\n'+extracted.slice(0,400)+(extracted.length>400?'\n…(이하 생략)':'');
 }
 
-var BASE_CSS="body{font-family:'Noto Serif KR','Noto Serif',Georgia,serif;line-height:1.8;margin:1.4em;color:#1a1410;}p{margin:0 0 .75em;}h1,h2,h3{font-weight:600;margin:1.4em 0 .6em;}hr{border:none;border-top:1px solid #ccc;margin:2em auto;width:60%;}.comment{font-size:.85em;color:#888;}";
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] CSS 병합 + 중복 제거
+// 파일에서 자동 추출한 CSS와 사용자가 업로드한 CSS 파일들을 하나로 합치되,
+// 같은 선택자가 여러 번 나오면 "나중 것"(=사용자가 업로드한 CSS)이 우선하도록
+// 덮어쓴다. @media 등 @-규칙은 병합하지 않고 순서 그대로 통과시킨다.
+// ══════════════════════════════════════════════════════════════
+function mergeCssWithDedup(cssBlocks){
+  var order=[],map={},atRules=[];
+  cssBlocks.forEach(function(css){
+    if(!css)return;
+    css=css.replace(/\/\*[\s\S]*?\*\//g,'');
+    var atRuleRe=/@[\w-]+[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g;
+    var withoutAt=css.replace(atRuleRe,function(match){atRules.push(match.trim());return'';});
+    var ruleRe=/([^{}]+)\{([^{}]*)\}/g,rm;
+    while((rm=ruleRe.exec(withoutAt))){
+      var sel=rm[1].trim().replace(/\s+/g,' ');
+      var body=rm[2].trim();
+      if(!sel||!body)continue;
+      if(!(sel in map))order.push(sel);
+      map[sel]=body;
+    }
+  });
+  var out=atRules.length?(atRules.join('\n')+'\n'):'';
+  out+=order.map(function(sel){return sel+' { '+map[sel]+' }';}).join('\n');
+  return out;
+}
+
+var BASE_CSS="body{font-family:'Noto Serif KR','Noto Serif',Georgia,serif;line-height:1.8;margin:1.4em;color:#1a1410;}p{margin:0 0 .75em;}h1,h2,h3{font-weight:600;margin:1.4em 0 .6em;}hr{border:none;border-top:1px solid #ccc;margin:2em auto;width:60%;}.comment{font-size:.85em;color:#888;}.pgbreak-before{page-break-before:always;break-before:page;}";
 
 
 
@@ -1533,19 +1600,35 @@ async function packEpub(title,author,chapters,cssExtra,doPurge,coverData,saveFil
     }
   });
   chapters.forEach(function(ch){ob.file(ch.file,mkXhtml(ch.title,ch.content));});
-  var navLi=chapters.map(function(ch){
-    var sub=(ch.hItems&&ch.hItems.length)?('\n      <ol>\n'+ch.hItems.map(function(h){return '        <li><a href="'+ch.file+(h.anchor||'')+'">'+esc(h.text)+'</a></li>';}).join('\n')+'\n      </ol>'):'';
-    return '      <li><a href="'+ch.file+'">'+esc(ch.title)+'</a>'+sub+'</li>';
+  // parentLabel이 같은 연속된 챕터들을 하나의 그룹(상위 목차)으로 묶는다
+  function groupChapters(list){
+    var groups=[];
+    list.forEach(function(ch){
+      var last=groups[groups.length-1];
+      if(ch.parentLabel&&last&&last.parentLabel===ch.parentLabel){last.children.push(ch);}
+      else{groups.push({parentLabel:ch.parentLabel||null,children:[ch]});}
+    });
+    return groups;
+  }
+  var chGroups=groupChapters(chapters);
+  var navLi=chGroups.map(function(g){
+    if(!g.parentLabel){
+      var ch=g.children[0];
+      return '      <li><a href="'+ch.file+'">'+esc(ch.title)+'</a></li>';
+    }
+    var sub='\n      <ol>\n'+g.children.map(function(ch){return '        <li><a href="'+ch.file+'">'+esc(ch.title)+'</a></li>';}).join('\n')+'\n      </ol>';
+    return '      <li><a href="'+g.children[0].file+'">'+esc(g.parentLabel)+'</a>'+sub+'</li>';
   }).join('\n');
   ob.file('nav.xhtml','<?xml version="1.0" encoding="utf-8"?>\n<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="ko">\n<head><meta charset="utf-8"/><title>목차</title></head>\n<body>\n  <nav epub:type="toc">\n    <ol>\n'+navLi+'\n    </ol>\n  </nav>\n</body>\n</html>');
   var po=1;
-  var ncxPts=chapters.map(function(ch){
-    var sub='';
-    if(ch.hItems&&ch.hItems.length){
-      sub='\n'+ch.hItems.map(function(h){var p=po++;return '      <navPoint id="np'+p+'" playOrder="'+p+'">\n        <navLabel><text>'+esc(h.text)+'</text></navLabel>\n        <content src="'+ch.file+(h.anchor||'')+'"/>\n      </navPoint>';}).join('\n');
+  var ncxPts=chGroups.map(function(g){
+    if(!g.parentLabel){
+      var ch=g.children[0];var p=po++;
+      return '    <navPoint id="np'+p+'" playOrder="'+p+'">\n      <navLabel><text>'+esc(ch.title)+'</text></navLabel>\n      <content src="'+ch.file+'"/>\n    </navPoint>';
     }
-    var p=po++;
-    return '    <navPoint id="np'+p+'" playOrder="'+p+'">\n      <navLabel><text>'+esc(ch.title)+'</text></navLabel>\n      <content src="'+ch.file+'"/>'+sub+'\n    </navPoint>';
+    var parentP=po++;
+    var sub=g.children.map(function(ch){var p=po++;return '      <navPoint id="np'+p+'" playOrder="'+p+'">\n        <navLabel><text>'+esc(ch.title)+'</text></navLabel>\n        <content src="'+ch.file+'"/>\n      </navPoint>';}).join('\n');
+    return '    <navPoint id="np'+parentP+'" playOrder="'+parentP+'">\n      <navLabel><text>'+esc(g.parentLabel)+'</text></navLabel>\n      <content src="'+g.children[0].file+'"/>\n'+sub+'\n    </navPoint>';
   }).join('\n');
   ob.file('toc.ncx','<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">\n<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">\n  <head><meta name="dtb:uid" content="'+uid+'"/></head>\n  <docTitle><text>'+esc(title)+'</text></docTitle>\n  <navMap>\n'+ncxPts+'\n  </navMap>\n</ncx>');
   var mfI=coverMfItem+imgMfItems+'    <item id="style" href="style.css" media-type="text/css"/>\n    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>\n    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n'+chapters.map(function(ch){return '    <item id="'+ch.id+'" href="'+ch.file+'" media-type="application/xhtml+xml"/>';}).join('\n');
@@ -1558,26 +1641,118 @@ async function packEpub(title,author,chapters,cssExtra,doPurge,coverData,saveFil
   document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 회차별 실제 파일 분리
+// 한 파일 안에 여러 회차(예: '서장'+'1장')가 들어있거나, 회차 제목이 본문과
+// 별도 블록(예: 카카오페이지 여러 페이지 캡처)으로 되어 있는 경우 이를 감지해
+// 실제로 별도의 xhtml 파일로 쪼갠다. (기존엔 한 파일 안에 앵커만 심어서 하위
+// 목차를 눌러도 실제로는 페이지 전환이 안 됐음)
+// ══════════════════════════════════════════════════════════════
+function classifyBlock(block){
+  var text=(block.textContent||'').trim();
+  var hasImg=!!block.querySelector('img');
+  if(!text&&!hasImg)return'empty';
+  var hasHeading=!!block.querySelector('h1,h2,h3,h4');
+  if(hasHeading&&text.length<100)return'title';
+  return'prose';
+}
+function splitProseBlockByHeadings(block){
+  // 헤딩이 한 단계 더 안쪽에 감싸여 있는 경우(예: DC2CN > div > h2)를 위해
+  // 자식이 div 하나뿐이면 한 단계 벗겨서 실제 내용 레벨까지 내려간다.
+  var root=block,guard=0;
+  while(root.children.length===1&&root.children[0].tagName==='DIV'&&root.children[0].children.length>0&&guard<5){
+    root=root.children[0];guard++;
+  }
+  var units=[];
+  var buffer=document.createElement('div');
+  var currentIsHeaded=false,currentText='';
+  function flush(){
+    if(buffer.childNodes.length){units.push({type:currentIsHeaded?'headed-prose':'prose',html:buffer.innerHTML,text:currentText});}
+    buffer=document.createElement('div');currentText='';
+  }
+  Array.from(root.childNodes).forEach(function(node){
+    if(node.nodeType===1&&/^H[1-4]$/.test(node.tagName)){
+      flush();
+      currentIsHeaded=true;currentText=node.textContent.trim();
+    }
+    buffer.appendChild(node.cloneNode(true));
+  });
+  flush();
+  return units;
+}
+function buildUnitsFromBlocks(blocks){
+  var units=[];
+  blocks.forEach(function(block){
+    var kind=classifyBlock(block);
+    if(kind==='empty')return;
+    if(kind==='title'){
+      var h=block.querySelector('h1,h2,h3,h4');
+      units.push({type:'title',html:block.outerHTML,text:h?h.textContent.trim():(block.textContent||'').trim().slice(0,30)});
+    }else{
+      splitProseBlockByHeadings(block).forEach(function(u){units.push(u);});
+    }
+  });
+  return units;
+}
+function buildSegments(tmpC,titlePageToggle,fallbackTitle){
+  var blocks=Array.from(tmpC.children);
+  var units=blocks.length?buildUnitsFromBlocks(blocks):[];
+  if(!units.length){
+    // 자식 구조가 없는 특이 케이스 — 통째로 하나의 세그먼트
+    return[{title:fallbackTitle,html:tmpC.innerHTML}];
+  }
+  var segments=[],pendingTitle=null,current=null;
+  function closeCurrent(){
+    if(current){segments.push({title:current.title||fallbackTitle,html:current.html});current=null;}
+  }
+  // 회차 제목을 별도 파일로 쪼개지 않고, 대신 CSS page-break로 "다음 페이지에서 본문 시작" 효과만 준다
+  // (html 파일 개수가 늘어나지 않음 — 제목+본문이 여전히 한 파일)
+  function wrapPageBreak(html){
+    return titlePageToggle?('<div class="pgbreak-before">'+html+'</div>'):html;
+  }
+  units.forEach(function(u){
+    if(u.type==='title'){
+      closeCurrent();
+      if(pendingTitle){pendingTitle.html+=u.html;pendingTitle.text=pendingTitle.text||u.text;}
+      else pendingTitle={html:u.html,text:u.text};
+    }else if(u.type==='headed-prose'){
+      // 새 헤딩이 나왔으므로 이전 세그먼트를 마무리하고 새 세그먼트 시작
+      closeCurrent();
+      var segText=u.text||(pendingTitle&&pendingTitle.text)||'';
+      var bodyHtml=pendingTitle?wrapPageBreak(u.html):u.html;
+      current={title:segText,html:(pendingTitle?pendingTitle.html:'')+bodyHtml};
+      pendingTitle=null;
+    }else{
+      // 새 헤딩 없이 이어지는 본문 — 지금 만들고 있는 세그먼트에 이어붙인다
+      if(!current){
+        var bodyHtml2=pendingTitle?wrapPageBreak(u.html):u.html;
+        current={title:(pendingTitle&&pendingTitle.text)||'',html:(pendingTitle?pendingTitle.html:'')+bodyHtml2};
+        pendingTitle=null;
+      }else{
+        current.html+=u.html;
+      }
+    }
+  });
+  closeCurrent();
+  if(pendingTitle)segments.push({title:pendingTitle.text||fallbackTitle,html:pendingTitle.html});
+  return segments;
+}
 function makeChapters(files,opts){
-  return files.map(function(f,i){
+  var titleOwnPageEl=document.getElementById('chk-title-own-page');
+  var titlePageToggle=titleOwnPageEl?titleOwnPageEl.checked:false;
+  var result=[];
+  files.forEach(function(f,i){
     var raw=f.text||'';
     var isHtml=raw.trim().startsWith('<');
-    // 파일명 stem (확장자 제거)
     var stem=f.name.replace(/\.\w+$/,'');
-    // XHTML 파일명: 원본 파일명 기반 (특수문자 안전하게)
     var safeId=stem.replace(/[^a-zA-Z0-9가-힣_\-]/g,'_');
-    // 중복 방지를 위해 인덱스를 suffix로
-    var chId='ch_'+safeId+'_'+i;
-    var chFile=safeId+'_'+i+'.xhtml';
 
-    // TXT 파일의 첫 줄을 제목으로 쓸지 판별 (목차 제목 + 본문 첫 h1 승격에 공통 사용)
     var txtFirstLine=null,txtBody=raw;
     if(!isHtml){
       var nlIdx=raw.indexOf('\n');
       var fl=(nlIdx===-1?raw:raw.slice(0,nlIdx)).trim();
       if(fl&&fl.length<50){
         txtFirstLine=fl;
-        // 첫 줄과 그 뒤 빈 줄들을 본문에서 제거 (제목은 별도 h1로 표시하므로 중복 방지)
         txtBody=(nlIdx===-1?'':raw.slice(nlIdx+1)).replace(/^\s*\n+/,'');
       }
     }
@@ -1593,44 +1768,47 @@ function makeChapters(files,opts){
     }
     var content;
     if(txtFirstLine!==null){
-      // TXT 챕터 제목을 실제 h1 태그로 승격 (커스텀 H태그 CSS가 시각적으로 적용되도록)
       content='<h1>'+esc(txtFirstLine)+'</h1>\n'+processContent(txtBody,opts);
     }else{
       content=processContent(processedRaw,opts);
     }
 
-    // 목차 구조 결정 — 완성된 본문(content)에서 실제 h태그를 찾아 앵커 id를 부여한다.
-    // 파일 하나에 h태그가 2개 이상이면(예: 한 파일에 '서장'+'1장'처럼 여러 회차가
-    // 들어있는 경우) 파일 자체를 상위 목차(권 단위)로 삼고, 모든 h태그를 그 아래
-    // 동등한 하위 목차로 둔다 (기존엔 첫 h태그가 상위로 잘못 승격되고 나머지가
-    // 그 밑에 중첩되면서, 하위 항목을 눌러도 앵커가 없어 항상 파일 맨 위로만 이동했음).
-    var hItems=[],tocTitle;
-    if(isHtml){
-      var tmpC=document.createElement('div');tmpC.innerHTML=content;
-      var hEls=Array.from(tmpC.querySelectorAll('h1,h2,h3'));
-      hEls.forEach(function(h,j){
-        var hid='sec_'+i+'_'+j;
-        h.setAttribute('id',hid);
-        hItems.push({text:h.textContent.trim(),anchor:'#'+hid});
-      });
-      content=tmpC.innerHTML;
-      if(S.tocOverrides[i]!==undefined){
-        tocTitle=S.tocOverrides[i];
-        if(hEls.length<2)hItems=[];
-      }else if(hEls.length>=2){
-        tocTitle=stem; // 여러 회차가 든 파일 — 파일명을 상위(권) 목차로 사용
-      }else if(hEls.length===1){
-        tocTitle=hItems[0].text;
-        hItems=[]; // 단일 헤딩은 기존처럼 하위 목차 없이 그대로 챕터 제목
-      }else{
-        tocTitle=stem;
-      }
-    }else{
-      tocTitle=(S.tocOverrides[i]!==undefined)?S.tocOverrides[i]:(txtFirstLine||stem);
+    if(!isHtml){
+      var tocTitle=(S.tocOverrides[i]!==undefined)?S.tocOverrides[i]:(txtFirstLine||stem);
+      result.push({id:'ch_'+safeId+'_'+i,file:safeId+'_'+i+'.xhtml',title:tocTitle,content:content,imgData:imgData,imgIdx:i,parentLabel:null});
+      return;
     }
 
-    return{id:chId,file:chFile,title:tocTitle,content:content,hItems:hItems,imgData:imgData,imgIdx:i};
+    var tmpC=document.createElement('div');tmpC.innerHTML=content;
+
+    if(S.tocOverrides[i]!==undefined){
+      // 사용자가 이 파일의 목차 제목을 직접 지정한 경우: 분리하지 않고 기존처럼 통째로
+      result.push({id:'ch_'+safeId+'_'+i,file:safeId+'_'+i+'.xhtml',title:S.tocOverrides[i],content:tmpC.innerHTML,imgData:imgData,imgIdx:i,parentLabel:null});
+      return;
+    }
+
+    var segments=buildSegments(tmpC,titlePageToggle,stem);
+    if(segments.length<=1){
+      var singleTitle=(segments.length===1&&segments[0].title)?segments[0].title:stem;
+      var singleHtml=segments.length===1?segments[0].html:tmpC.innerHTML;
+      result.push({id:'ch_'+safeId+'_'+i,file:safeId+'_'+i+'.xhtml',title:singleTitle,content:singleHtml,imgData:imgData,imgIdx:i,parentLabel:null});
+      return;
+    }
+
+    // 세그먼트 2개 이상 — 실제로 파일 분리, 원본 파일명을 상위(권) 목차로 묶는다
+    segments.forEach(function(seg,j){
+      result.push({
+        id:'ch_'+safeId+'_'+i+'_'+j,
+        file:safeId+'_'+i+'_'+j+'.xhtml',
+        title:seg.title||('섹션 '+(j+1)),
+        content:seg.html,
+        imgData:(j===0)?imgData:undefined,
+        imgIdx:(j===0)?i:undefined,
+        parentLabel:stem
+      });
+    });
   });
+  return result;
 }
 
 async function buildEpub(){
@@ -1666,12 +1844,14 @@ async function buildEpub(){
       });
     }
     prog(60,'CSS 생성...');await tick();
-    var userCss=S.cssFiles.map(function(f){return f.content;}).join('\n');
-    // CSS 파일 없고 자동추출 체크 시 → 파일 내 스타일 추출
-    if(!S.cssFiles.length&&document.getElementById('chk-extract-css').checked){
+    var cssBlocks=[];
+    if(document.getElementById('chk-extract-css').checked){
       var extracted=extractStylesFromFiles(S.files);
-      if(extracted)userCss=extracted;
+      if(extracted)cssBlocks.push(extracted);
     }
+    S.cssFiles.forEach(function(f){cssBlocks.push(f.content);});
+    // 추출 CSS + 업로드 CSS 병합, 중복 선택자는 업로드 CSS(나중 순서)가 우선
+    var userCss=mergeCssWithDedup(cssBlocks);
     if(doStyle)userCss+='\n'+buildCustomCss();
     if(doIndent){
       var indentSize=v('indent-size')||'1';
