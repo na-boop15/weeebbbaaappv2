@@ -378,6 +378,20 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
             </div>
           </div>
 
+          <div class="sek">
+            <div class="sek-title">본문 여백 설정</div>
+            <div class="tog-row" style="padding:6px 0 2px;">
+              <div class="tog-info"><div class="tl" style="font-size:12px;">직접 설정</div><div class="td">미체크 시 기본값(줄높이 1.75 등) 사용</div></div>
+              <label class="tog"><input type="checkbox" id="chk-body-margin" onchange="document.getElementById('body-margin-controls').style.display=this.checked?'grid':'none';"/><span class="tog-sl"></span></label>
+            </div>
+            <div id="body-margin-controls" style="display:none;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;">
+              <div class="sek-row"><label>좌우 마진 (em)</label><input type="text" id="body-margin" value="0" style="width:100%;padding:5px 6px;border:1.5px solid var(--bd);border-radius:6px;font-size:11px;font-family:'DM Mono',monospace;background:var(--surf);color:var(--tx);outline:none;"/></div>
+              <div class="sek-row"><label>줄 높이</label><input type="text" id="body-lh" value="1.75" style="width:100%;padding:5px 6px;border:1.5px solid var(--bd);border-radius:6px;font-size:11px;font-family:'DM Mono',monospace;background:var(--surf);color:var(--tx);outline:none;"/></div>
+              <div class="sek-row"><label>문단 위 마진 (em)</label><input type="text" id="body-pt" value="0.6" style="width:100%;padding:5px 6px;border:1.5px solid var(--bd);border-radius:6px;font-size:11px;font-family:'DM Mono',monospace;background:var(--surf);color:var(--tx);outline:none;"/></div>
+              <div class="sek-row"><label>문단 아래 마진 (em)</label><input type="text" id="body-pb" value="1.4" style="width:100%;padding:5px 6px;border:1.5px solid var(--bd);border-radius:6px;font-size:11px;font-family:'DM Mono',monospace;background:var(--surf);color:var(--tx);outline:none;"/></div>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -523,6 +537,8 @@ function detectTitleAuthorFromFilename(filename){
   // 제목 끝에 남은 권/화 번호 정리
   title=title.replace(/\s*\d+\s*(?:권|화|부|장)\s*(?:완결|완|完)?\s*$/,'').trim();
   title=title.replace(/\s*[-~∼]?\s*\d+\s*[-~∼]\s*\d+\s*(?:권|화|장)?\s*(?:완결|완|完)?\s*$/,'').trim();
+  // '화' 등 단위 글자 없이 끝에 숫자만 붙어있는 경우도 제거 (회차는 어차피 직접 입력하므로)
+  title=title.replace(/\s+\d+(\.\d+)?\s*$/,'').trim();
   return{title:title,author:author};
 }
 function applyAutoTitleAuthor(){
@@ -1392,7 +1408,12 @@ function processContent(raw,opts){
 function buildCustomCss(){
   function v(id){return document.getElementById(id).value.trim();}
   var align=document.getElementById('h-align').value;
-  return'h1,h2,h3{font-size:'+v('h-size')+'em !important;color:'+v('h-hex')+' !important;margin-top:'+v('h-mt')+'em !important;margin-bottom:'+v('h-mb')+'em !important;text-align:'+align+' !important;}';
+  var css='h1,h2,h3{font-size:'+v('h-size')+'em !important;color:'+v('h-hex')+' !important;margin-top:'+v('h-mt')+'em !important;margin-bottom:'+v('h-mb')+'em !important;text-align:'+align+' !important;}';
+  if(document.getElementById('chk-body-margin').checked){
+    var bm=v('body-margin')||'0',lh=v('body-lh')||'1.75',pt=v('body-pt')||'0.6',pb=v('body-pb')||'1.4';
+    css+='body{line-height:'+lh+' !important;margin-left:'+bm+'em !important;margin-right:'+bm+'em !important;}p{margin-top:'+pt+'em !important;margin-bottom:'+pb+'em !important;}';
+  }
+  return css;
 }
 
 function purgeUnusedCss(cssText,htmlContents){
