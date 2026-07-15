@@ -291,7 +291,7 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
           <input type="checkbox" id="chk-extract-css" checked style="width:15px;height:15px;margin-top:2px;flex-shrink:0;accent-color:var(--ac);cursor:pointer;"/>
           <div>
             <div style="font-size:12px;font-weight:600;color:var(--tx);cursor:pointer;" onclick="document.getElementById('chk-extract-css').click()">파일 내 스타일 자동 추출 (업로드한 CSS와 합쳐짐, 겹치면 업로드 CSS 우선)</div>
-            <div style="font-size:10px;color:var(--mu);margin-top:2px;">HTML 파일의 &lt;style&gt; 코드를 모아 중복 제거 후 적용. CSS 파일 추가 시엔 비활성화.</div>
+            <div style="font-size:10px;color:var(--mu);margin-top:2px;">HTML 파일의 &lt;style&gt; 코드(폰트 지정 등 포함)를 모아 중복 제거 후 적용. 업로드한 CSS 파일과 함께 합쳐짐.</div>
           </div>
         </div>
         <div id="extracted-css-preview" style="display:none;margin-top:8px;padding:8px 10px;background:#f0f8ff;border:1px solid #b3d7f5;border-radius:7px;font-family:'DM Mono',monospace;font-size:10px;color:#1a5fa8;white-space:pre-wrap;max-height:100px;overflow-y:auto;"></div>
@@ -1451,6 +1451,7 @@ function purgeUnusedCss(cssText,htmlContents){
     var keep=sel.split(',').map(function(s){return s.trim();}).some(function(part){
       var base=part.replace(/::?[\w-]+(\([^)]*\))?/g,'').replace(/[>+~\s].*/,'').trim();
       if(!base)return true;
+      if(base==='*')return true; // 전체 선택자는 항상 유지 (예: 파일 내 폰트 지정 * { font-family: ... })
       if(used.has(base))return true;
       var classes=base.match(/\.[a-zA-Z0-9_-]+/g)||[];
       if(classes.some(function(c){return used.has(c);}))return true;
