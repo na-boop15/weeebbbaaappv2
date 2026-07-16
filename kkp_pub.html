@@ -840,6 +840,11 @@ function renderToc(){
     var titlePageToggleEl=document.getElementById('chk-title-own-page');
     var segs=isHtmlFile?(function(){
       var t=document.createElement('div');t.innerHTML=f.text;
+      t.querySelectorAll('style,script,title,meta,head,link').forEach(function(el){el.remove();});
+      var guard=0;
+      while(t.children.length===1&&t.children[0].tagName==='DIV'&&t.children[0].children.length>1&&guard<5){
+        t.innerHTML=t.children[0].innerHTML;guard++;
+      }
       return buildSegments(t,titlePageToggleEl?titlePageToggleEl.checked:false,stem);
     })():[];
     var displayTitle;
@@ -1038,11 +1043,17 @@ function renderImgPanel(){
 function detectInlineCoverImgs(text){
   if(!text)return[];
   var out=[];
-  var re=/<img\b[^>]*>/gi,m;
+  var re=/<img\b[^>]*>/gi,m,idx=0;
   while((m=re.exec(text))){
     var tag=m[0];
-    var isCover=/alt\s*=\s*["']cover["']/i.test(tag)||/data-is-cover\s*=/i.test(tag)||/data-name\s*=\s*["']cover/i.test(tag)||/(?:src|data-src)\s*=\s*["'][^"']*cover[^"']*["']/i.test(tag);
+    // data-is-cover 속성은 실제 표지든 삽화든 항상 "false"로 찍혀 있어 신뢰할 수 없는 값이라 더 이상 참고하지 않음.
+    // alt="cover" / data-name이 cover로 시작 / src에 cover 포함 — 이런 명확한 표지 마커가 있거나,
+    // 이 파일에서 "가장 먼저 나오는 이미지"인 경우를 표지 후보로 본다 (카카오페이지는 회차 맨 앞에
+    // 반복되는 표지 썸네일을 넣는 경우가 많고, 실제 삽화는 alt="mark" 등 다른 값으로 구분됨).
+    var strongMarker=/alt\s*=\s*["']cover["']/i.test(tag)||/data-name\s*=\s*["']cover/i.test(tag)||/(?:src|data-src)\s*=\s*["'][^"']*cover[^"']*["']/i.test(tag);
+    var isCover=strongMarker||idx===0;
     out.push({index:m.index,len:tag.length,tag:tag,looksCover:isCover});
+    idx++;
   }
   return out;
 }
