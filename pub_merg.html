@@ -98,6 +98,16 @@ input[type="file"]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0
 .info-box{background:var(--s2);border:1px solid var(--bd);border-radius:8px;padding:12px 14px;font-size:12px;color:var(--mu);line-height:1.8;}
 .info-box strong{color:var(--tx);}
 
+/* 계층 목차 하위 표시 */
+.toc-sub-row{display:flex;align-items:center;gap:4px;padding:2px 7px 2px 20px;}
+.toc-sub-arrow{color:var(--bd);font-size:9px;flex-shrink:0;}
+
+/* 표지/판권 배지 */
+.badge-cover{background:#e8f4fd;color:#1a5fa8;border:1px solid #b3d7f5;font-size:9px;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:4px;flex-shrink:0;}
+.badge-copy{background:#fdf3e8;color:#b06010;border:1px solid #f5d3a0;font-size:9px;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:4px;flex-shrink:0;}
+.badge-del{background:#fee;color:var(--er);border:1px solid #fcc;font-size:9px;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:4px;flex-shrink:0;text-decoration:line-through;}
+.badge-split{font-size:10px;color:var(--ac);font-family:'DM Mono',monospace;flex-shrink:0;background:var(--acl);padding:1px 5px;border-radius:4px;}
+
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--tx);color:#fff;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.04em;padding:9px 18px;border-radius:8px;border-left:4px solid var(--ac);opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:9999;white-space:pre-line;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.18);}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 #toast.ok{border-left-color:var(--ok);}
@@ -135,7 +145,21 @@ input[type="file"]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0
         <div id="em-chapter-list" style="display:flex;flex-direction:column;gap:4px;max-height:380px;overflow-y:auto;"></div>
         <div class="btn-row" style="margin-top:9px;">
           <button class="btn btn-ghost btn-sm" onclick="emClearAll()">전체 삭제</button>
+          <button class="btn btn-ghost btn-sm" onclick="openEmCoverCleanPanel()" title="표지·판권으로 감지된 챕터를 검토 후 선택 삭제">🧹 표지·판권 정리</button>
         </div>
+      </div>
+      <div class="card" id="em-cover-clean-panel" style="display:none;">
+        <div class="card-hd" style="margin-bottom:10px;">
+          🧹 표지·판권 정리 검토
+          <span style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--mu);cursor:pointer;font-family:'DM Mono',monospace;">
+              <input type="checkbox" id="em-cover-clean-select-all" onchange="document.querySelectorAll('.em-cover-clean-chk').forEach(function(c){c.checked=this.checked;}.bind(this))"/>
+              전체 선택
+            </label>
+            <button class="btn btn-ghost btn-sm" style="color:var(--er);" onclick="deleteCheckedEmCoverCleanItems()">선택 삭제</button>
+          </span>
+        </div>
+        <div id="em-cover-clean-list" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;"></div>
       </div>
     </div>
     <div style="display:flex;flex-direction:column;gap:14px;">
@@ -262,6 +286,7 @@ var S={
   emCssFiles:[],
   emEpubs:[],
   emCoverData:null,
+  emCoverCleanItems:[],
   epub2txtData:null,
   tmFiles:[]
 };
@@ -837,6 +862,97 @@ async function addEmFiles(fl){
   toast(rawBufs.length+'개 EPUB 추가 (챕터 '+total+'개)','ok');
 }
 
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 표지·판권 페이지 감지 (kkp_pub.html과 동일 로직)
+// ══════════════════════════════════════════════════════════════
+function detectEmPageType(html){
+  if(!html||!html.trim())return null;
+  var tmp=document.createElement('div');tmp.innerHTML=html;
+  var text=(tmp.textContent||'').replace(/\s+/g,' ').trim().slice(0,300).toLowerCase();
+  var imgs=tmp.querySelectorAll('img');
+  var textLen=text.length;
+  if(imgs.length>=1&&textLen<80)return'cover';
+  if(/^(표지|cover|커버)/.test(text)||text.includes('표지 이미지')||(imgs.length>=1&&textLen<150&&/표지|cover/.test(text)))return'cover';
+  if(/isbn|판권|copyright|©|출판사|발행인|초판|인쇄|제작|all rights|무단 전재|무단전재|등록번호/.test(text))return'copyright';
+  if(imgs.length>=1&&tmp.querySelectorAll('p,div,span,h1,h2,h3').length<=3)return'cover';
+  return null;
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 계층 목차 — 하나의 스파인 xhtml 안에 여러 회차(h1~h4)가
+// 뭉쳐 있는 경우를 감지해 실제 파일 분리를 위한 세그먼트로 쪼갠다 (kkp_pub.html과 동일 로직)
+// ══════════════════════════════════════════════════════════════
+function emIsWrapperDiv(el){
+  if(el.tagName!=='DIV')return false;
+  for(var i=0;i<el.childNodes.length;i++){
+    var n=el.childNodes[i];
+    if(n.nodeType===3&&n.textContent.trim())return false;
+  }
+  if(el.children.length===0)return false;
+  if(el.children.length===1&&el.children[0].tagName==='IMG')return false;
+  return true;
+}
+function emFlattenToUnits(root){
+  var units=[];
+  function walk(node){
+    Array.from(node.children).forEach(function(el){
+      if(/^H[1-4]$/.test(el.tagName)){
+        units.push({type:'heading',html:el.outerHTML,text:el.textContent.trim()});
+      }else if(emIsWrapperDiv(el)){
+        walk(el);
+      }else{
+        var txt=(el.textContent||'').trim();
+        var hasImg=el.tagName==='IMG'||!!el.querySelector('img');
+        if(!txt&&!hasImg)return;
+        units.push({type:'content',html:el.outerHTML,hasImg:hasImg});
+      }
+    });
+  }
+  walk(root);
+  return units;
+}
+function emBuildSegments(tmpC,fallbackTitle){
+  var units=emFlattenToUnits(tmpC);
+  if(!units.length)return[{title:fallbackTitle,html:tmpC.innerHTML}];
+  var segments=[],pendingTitle=null,current=null,carry='';
+  function closeCurrent(){if(current){segments.push({title:current.title||fallbackTitle,html:current.html});current=null;}}
+  function carryTextLen(extra){return(carry+extra).replace(/<[^>]+>/g,'').trim().length;}
+  units.forEach(function(u){
+    if(u.type==='heading'){
+      closeCurrent();
+      var h=carry+u.html;carry='';
+      if(pendingTitle){pendingTitle.html+=h;pendingTitle.text=pendingTitle.text||u.text;}
+      else pendingTitle={html:h,text:u.text};
+    }else{
+      if(pendingTitle){
+        current={title:pendingTitle.text,html:pendingTitle.html+carry+u.html};
+        carry='';pendingTitle=null;
+      }else if(current){
+        current.html+=carry+u.html;carry='';
+      }else if(u.hasImg||carryTextLen(u.html)>300){
+        segments.push({title:fallbackTitle,html:carry+u.html});carry='';
+      }else{
+        carry+=u.html;
+      }
+    }
+  });
+  closeCurrent();
+  if(pendingTitle){pendingTitle.html+=carry;segments.push({title:pendingTitle.text||fallbackTitle,html:pendingTitle.html});}
+  else if(carry){if(segments.length)segments[segments.length-1].html+=carry;else segments.push({title:fallbackTitle,html:carry});}
+  return segments;
+}
+function emComputeSegments(bodyContent,fallbackTitle){
+  try{
+    var tmp=document.createElement('div');tmp.innerHTML=bodyContent;
+    tmp.querySelectorAll('style,script,title,meta,head,link').forEach(function(el){el.remove();});
+    var guard=0;
+    while(tmp.children.length===1&&tmp.children[0].tagName==='DIV'&&tmp.children[0].children.length>1&&guard<5){
+      tmp.innerHTML=tmp.children[0].innerHTML;guard++;
+    }
+    return emBuildSegments(tmp,fallbackTitle);
+  }catch(e){return[{title:fallbackTitle,html:bodyContent}];}
+}
+
 async function parseEpubChapters(buf){
   var chapters=[];
   try{
@@ -874,7 +990,13 @@ async function parseEpubChapters(buf){
       var chTitle=titleM?titleM[1].replace(/<[^>]+>/g,'').trim():'';
       if(!chTitle){var t2=xhtmlText.match(/<title[^>]*>([\s\S]*?)<\/title>/i);chTitle=t2?t2[1].replace(/<[^>]+>/g,'').trim():'';}
       if(!chTitle)chTitle=href.split('/').pop().replace(/\.xhtml?$/i,'');
-      chapters.push({title:chTitle,href:href,fullPath:fullPath,epubZip:ez,opfBase:opfBase,mtMap:mtMap,hrefMap:hrefMap,xhtmlText:xhtmlText});
+      var bodyM0=xhtmlText.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+      var bodyContent0=bodyM0?bodyM0[1].trim():xhtmlText;
+      var pageType=detectEmPageType(bodyContent0);
+      var segPreview=pageType?[]:emComputeSegments(bodyContent0,chTitle);
+      var segCount=(segPreview&&segPreview.length>=2)?segPreview.length:0;
+      var segTitles=segCount?segPreview.map(function(s){return s.title||'';}):[];
+      chapters.push({title:chTitle,href:href,fullPath:fullPath,epubZip:ez,opfBase:opfBase,mtMap:mtMap,hrefMap:hrefMap,xhtmlText:xhtmlText,pageType:pageType,segCount:segCount,segTitles:segTitles});
     }
   }catch(e){console.warn('epub parse error',e);}
   return chapters;
@@ -888,6 +1010,7 @@ function renderEmList(){
     wrap.innerHTML='<div style="padding:14px;text-align:center;color:var(--mu);font-size:11px;font-family:\'DM Mono\',monospace;">파일이 없습니다</div>';
     return;
   }
+  var emFirstCoverFound=false;
   S.emEpubs.forEach(function(epub,ei){
     var header=document.createElement('div');
     header.style.cssText='display:flex;align-items:center;gap:7px;padding:6px 8px;background:var(--ac);color:#fff;border-radius:7px;margin-top:'+(ei>0?'6px':'0px')+';';
@@ -916,12 +1039,116 @@ function renderEmList(){
       inp.addEventListener('change',function(){ch.title=this.value.trim()||ch.title;});
       inp.addEventListener('blur',function(){ch.title=this.value.trim()||ch.title;});
       row.appendChild(inp);
+      // 표지/판권 배지
+      if(ch.pageType==='cover'){
+        var badge=document.createElement('span');
+        if(!emFirstCoverFound){badge.className='badge-cover';badge.textContent='표지';emFirstCoverFound=true;}
+        else{badge.className='badge-del';badge.textContent='표지';badge.title='정리 시 삭제 대상';}
+        row.appendChild(badge);
+      }else if(ch.pageType==='copyright'){
+        var badge2=document.createElement('span');
+        badge2.className='badge-del';badge2.textContent='판권';badge2.title='정리 시 삭제 대상';
+        row.appendChild(badge2);
+      }
+      // 계층 목차: 한 스파인 파일에 여러 회차가 뭉쳐 있으면 분리 예정 배지 표시
+      if(ch.segCount>=2){
+        var hbadge=document.createElement('span');
+        hbadge.className='badge-split';hbadge.textContent=ch.segCount+'개 파일로 분리';
+        row.appendChild(hbadge);
+      }
       var del=document.createElement('button');
       del.className='file-del';del.textContent='✕';del.title='이 챕터 제외';
       (function(eidx,cidx){del.addEventListener('click',function(){S.emEpubs[eidx].chapters.splice(cidx,1);renderEmList();});})(ei,ci);
       row.appendChild(del);wrap.appendChild(row);
+
+      // 계층 목차 하위 표시 — 실제 분리될 회차가 2개 이상일 때만 펼쳐 보여줌
+      if(ch.segCount>=2){
+        ch.segTitles.forEach(function(st){
+          var subRow=document.createElement('div');
+          subRow.className='toc-sub-row';
+          var arrow=document.createElement('span');arrow.className='toc-sub-arrow';arrow.textContent='└';
+          var txt=document.createElement('span');
+          txt.style.cssText='font-size:11px;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;';
+          txt.textContent=st||'(제목 없음)';
+          subRow.appendChild(arrow);subRow.appendChild(txt);
+          wrap.appendChild(subRow);
+        });
+      }
     });
   });
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 표지·판권 정리 — 검토 후 선택 삭제 (kkp_pub.html과 동일 UX)
+// 여러 EPUB을 합칠 때 각 권마다 딸려오는 표지·판권 페이지가 중복되므로,
+// 첫 표지만 남기고 나머지 표지·모든 판권 페이지를 검토 후 정리할 수 있게 한다.
+// ══════════════════════════════════════════════════════════════
+function openEmCoverCleanPanel(){
+  if(!S.emEpubs.length){toast('EPUB 파일이 없습니다','err');return;}
+  var items=[];
+  var firstCoverSeen=false;
+  S.emEpubs.forEach(function(epub,ei){
+    (epub.chapters||[]).forEach(function(ch,ci){
+      if(ch.pageType==='cover'){
+        items.push({ei:ei,ci:ci,type:'cover',label:'표지 파일',name:epub.name+' — '+ch.title,keepFirst:!firstCoverSeen});
+        firstCoverSeen=true;
+      }else if(ch.pageType==='copyright'){
+        items.push({ei:ei,ci:ci,type:'copyright',label:'판권 파일',name:epub.name+' — '+ch.title});
+      }
+    });
+  });
+  var panel=document.getElementById('em-cover-clean-panel');
+  var list=document.getElementById('em-cover-clean-list');
+  if(!items.length){toast('감지된 표지·판권 항목이 없습니다','ok');panel.style.display='none';return;}
+  S.emCoverCleanItems=items;
+  document.getElementById('em-cover-clean-select-all').checked=false;
+  list.innerHTML='';
+  items.forEach(function(item,rowIdx){
+    var row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:10px;padding:7px 9px;background:var(--s2);border:1px solid var(--bd);border-radius:8px;';
+    var chkWrap=document.createElement('label');
+    chkWrap.style.cssText='display:flex;align-items:center;cursor:pointer;flex-shrink:0;';
+    var chk=document.createElement('input');
+    chk.type='checkbox';chk.className='em-cover-clean-chk';
+    // 첫 표지는 기본적으로 유지(미체크), 나머지 표지/판권은 기본 체크(삭제 예정)
+    chk.checked=!(item.type==='cover'&&item.keepFirst);
+    chk.dataset.rowIdx=rowIdx;
+    chk.style.cssText='width:14px;height:14px;cursor:pointer;accent-color:var(--ac);';
+    chkWrap.appendChild(chk);row.appendChild(chkWrap);
+    var badge=document.createElement('span');
+    badge.style.cssText='font-size:9px;padding:2px 6px;border-radius:4px;background:'+(item.type==='copyright'?'#7a3b3b':'#3b5a7a')+';color:#fff;flex-shrink:0;';
+    badge.textContent=item.label;row.appendChild(badge);
+    var label=document.createElement('span');
+    label.style.cssText='flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    label.textContent=item.name;
+    row.appendChild(label);
+    if(item.type==='cover'&&item.keepFirst){
+      var keepTag=document.createElement('span');
+      keepTag.style.cssText='font-size:9px;color:var(--ok);font-family:\'DM Mono\',monospace;flex-shrink:0;';
+      keepTag.textContent='첫 표지 (유지 권장)';
+      row.appendChild(keepTag);
+    }
+    list.appendChild(row);
+  });
+  panel.style.display='block';
+  panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function deleteCheckedEmCoverCleanItems(){
+  var items=S.emCoverCleanItems||[];
+  var checks=document.querySelectorAll('.em-cover-clean-chk');
+  var checkedRows=[];
+  checks.forEach(function(c){if(c.checked)checkedRows.push(items[parseInt(c.dataset.rowIdx)]);});
+  if(!checkedRows.length){toast('선택된 항목이 없습니다','err');return;}
+  // epub별로 묶어서 챕터 인덱스 뒤에서부터 삭제 (인덱스 꼬임 방지)
+  var byEpub={};
+  checkedRows.forEach(function(item){(byEpub[item.ei]=byEpub[item.ei]||[]).push(item.ci);});
+  Object.keys(byEpub).forEach(function(k){
+    var idxs=Array.from(new Set(byEpub[k])).sort(function(a,b){return b-a;});
+    idxs.forEach(function(ci){S.emEpubs[parseInt(k)].chapters.splice(ci,1);});
+  });
+  document.getElementById('em-cover-clean-panel').style.display='none';
+  renderEmList();
+  toast(checkedRows.length+'개 챕터 정리됨','ok');
 }
 
 function emClearAll(){
@@ -988,8 +1215,18 @@ async function buildMergedEpub(){
           });
           var bodyM=xhtmlText.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
           var bodyContent=bodyM?bodyM[1].trim():xhtmlText;
-          var chId='ch_'+chIdx,chFile=chId+'.xhtml';
-          allChapters.push({id:chId,file:chFile,title:ch.title,content:bodyContent});
+          // [추가 기능] 계층 목차 — 한 스파인 파일 안에 여러 회차(h1~h4)가 뭉쳐 있으면
+          // 실제로 파일을 물리적으로 분리해 각각 독립된 스파인 항목으로 만든다.
+          var segs=emComputeSegments(bodyContent,ch.title);
+          if(segs.length>=2){
+            segs.forEach(function(seg,si){
+              var chId='ch_'+chIdx+'_'+si,chFile=chId+'.xhtml';
+              allChapters.push({id:chId,file:chFile,title:seg.title||('섹션 '+(si+1)),content:seg.html});
+            });
+          }else{
+            var chId='ch_'+chIdx,chFile=chId+'.xhtml';
+            allChapters.push({id:chId,file:chFile,title:ch.title,content:bodyContent});
+          }
           chIdx++;
         }
       }catch(e){console.warn('EPUB 처리 오류:',epub.name,e);}
