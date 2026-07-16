@@ -214,6 +214,7 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
               선택 회차에 적용
               <input type="file" id="img-apply-input" accept="image/*" style="position:absolute;left:-9999px;"/>
             </label>
+            <button class="btn btn-ghost btn-sm" style="color:var(--er);" onclick="deleteSelectedIllustrations()">선택 삭제</button>
           </span>
         </div>
         <div id="img-list" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;"></div>
@@ -782,10 +783,10 @@ function dD(e){
 function dE(){document.querySelectorAll('.file-item').forEach(function(el){el.classList.remove('dragging','drag-target');});dragSrc=null;}
 
 function removeFile(i){
-  var newImg={},newToc={};
-  Object.keys(S.imgMap).forEach(function(k){var ki=parseInt(k);if(ki<i)newImg[ki]=S.imgMap[ki];else if(ki>i)newImg[ki-1]=S.imgMap[ki];});
+  var newToc={};
+  reindexImgMapAfterDelete(i);
   Object.keys(S.tocOverrides).forEach(function(k){var ki=parseInt(k);if(ki<i)newToc[ki]=S.tocOverrides[ki];else if(ki>i)newToc[ki-1]=S.tocOverrides[ki];});
-  S.imgMap=newImg;S.tocOverrides=newToc;
+  S.tocOverrides=newToc;
   S.files.splice(i,1);renderList();renderToc();renderImgPanel();
 }
 function clearAll(){
@@ -902,10 +903,10 @@ function renderToc(){
     del.textContent='✕';del.title='이 챕터를 파일 목록에서 삭제';
     (function(idx){
       del.addEventListener('click',function(){
-        var newImg={},newToc={};
-        Object.keys(S.imgMap).forEach(function(k){var ki=parseInt(k);if(ki<idx)newImg[ki]=S.imgMap[ki];else if(ki>idx)newImg[ki-1]=S.imgMap[ki];});
+        var newToc={};
+        reindexImgMapAfterDelete(idx);
         Object.keys(S.tocOverrides).forEach(function(k){var ki=parseInt(k);if(ki<idx)newToc[ki]=S.tocOverrides[ki];else if(ki>idx)newToc[ki-1]=S.tocOverrides[ki];});
-        S.imgMap=newImg;S.tocOverrides=newToc;
+        S.tocOverrides=newToc;
         S.files.splice(idx,1);renderList();renderToc();renderImgPanel();applyAutoCompletion();toast('챕터 삭제됨','ok');
       });
     })(i);
@@ -974,23 +975,29 @@ function renderImgPanel(){
   var panel=document.getElementById('img-panel');
   var list=document.getElementById('img-list');
   list.innerHTML='';
-  var imgFiles=[];
+  var items=[]; // {key:'fileIdx_imgPos', fileIdx, name, hitIndex, hitLen}
   S.files.forEach(function(f,i){
-    if(!f.text)return;
-    var tmp=document.createElement('div');tmp.innerHTML=f.text;
-    if(tmp.querySelector('img'))imgFiles.push({idx:i,name:f.name.replace(/\.\w+$/,'')});
+    if(!f.text||!f.text.trim().startsWith('<'))return;
+    var hits=detectInlineCoverImgs(f.text);
+    var pos=0;
+    hits.forEach(function(hit){
+      var key=i+'_'+pos;
+      if(!hit.looksCover&&!hit.looksLikeIcon)items.push({key:key,fileIdx:i,name:f.name.replace(/\.\w+$/,''),hitIndex:hit.index,hitLen:hit.len});
+      pos++;
+    });
   });
-  panel.style.display=imgFiles.length?'block':'none';
-  if(!imgFiles.length)return;
+  S.illusItems=items;
+  panel.style.display=items.length?'block':'none';
+  if(!items.length)return;
   document.getElementById('img-select-all').checked=false;
-  imgFiles.forEach(function(item){
-    var imgData=S.imgMap[item.idx]||null;
+  items.forEach(function(item){
+    var imgData=S.imgMap[item.key]||null;
     var row=document.createElement('div');
     row.style.cssText='display:flex;align-items:center;gap:10px;padding:7px 9px;background:var(--s2);border:1px solid var(--bd);border-radius:8px;';
     var chkWrap=document.createElement('label');
     chkWrap.style.cssText='display:flex;align-items:center;cursor:pointer;flex-shrink:0;';
     var chk=document.createElement('input');
-    chk.type='checkbox';chk.className='img-row-chk';chk.dataset.idx=item.idx;
+    chk.type='checkbox';chk.className='img-row-chk';chk.dataset.key=item.key;
     chk.style.cssText='width:14px;height:14px;cursor:pointer;accent-color:var(--ac);';
     chkWrap.appendChild(chk);row.appendChild(chkWrap);
     var thumb=document.createElement('div');
@@ -1012,26 +1019,47 @@ function renderImgPanel(){
     btnLabel.className='btn btn-ghost btn-sm';btnLabel.style.cursor='pointer';
     btnLabel.textContent=imgData?'변경':'첨부';
     var inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.style.cssText='position:absolute;left:-9999px;';
-    (function(idx){
+    (function(key){
       inp.addEventListener('change',function(e){
         var file=e.target.files[0];if(!file)return;
         var r=new FileReader();
         r.onload=function(ev){
           var b64=ev.target.result;var mt=file.type||'image/jpeg';
           var ext=mt.includes('png')?'png':mt.includes('gif')?'gif':mt.includes('webp')?'webp':'jpg';
-          S.imgMap[idx]={b64:b64,ext:ext,mt:mt,name:file.name};renderImgPanel();toast('이미지 연결됨','ok');
+          S.imgMap[key]={b64:b64,ext:ext,mt:mt,name:file.name};renderImgPanel();toast('이미지 연결됨','ok');
         };r.readAsDataURL(file);e.target.value='';
       });
-    })(item.idx);
+    })(item.key);
     btnLabel.appendChild(inp);row.appendChild(btnLabel);
     if(imgData){
       var delBtn=document.createElement('button');
       delBtn.className='btn btn-ghost btn-sm';delBtn.textContent='✕';delBtn.style.color='var(--er)';
-      (function(idx){delBtn.addEventListener('click',function(){delete S.imgMap[idx];renderImgPanel();});})(item.idx);
+      (function(key){delBtn.addEventListener('click',function(){delete S.imgMap[key];renderImgPanel();});})(item.key);
       row.appendChild(delBtn);
     }
     list.appendChild(row);
   });
+}
+// 삽화 연결 목록에서 선택한 항목의 <img> 태그를 본문에서 직접 삭제 (표지·판권 정리와는 별도로 동작)
+function deleteSelectedIllustrations(){
+  var checks=document.querySelectorAll('.img-row-chk:checked');
+  if(!checks.length){toast('선택된 항목이 없습니다','err');return;}
+  var byIdx={};
+  checks.forEach(function(chk){
+    var item=(S.illusItems||[]).find(function(x){return x.key===chk.dataset.key;});
+    if(!item)return;
+    (byIdx[item.fileIdx]=byIdx[item.fileIdx]||[]).push(item);
+    delete S.imgMap[item.key];
+  });
+  Object.keys(byIdx).forEach(function(k){
+    var idx=parseInt(k);
+    var hits=byIdx[k].slice().sort(function(a,b){return b.hitIndex-a.hitIndex;});
+    var text=S.files[idx].text;
+    hits.forEach(function(h){text=text.slice(0,h.hitIndex)+text.slice(h.hitIndex+h.hitLen);});
+    S.files[idx].text=text;
+  });
+  renderImgPanel();renderToc();
+  toast(checks.length+'개 삽화 삭제됨','ok');
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1040,6 +1068,20 @@ function renderImgPanel(){
 // 중간에 표지가 바뀌는 시리즈도 있어서 체크박스로 검토 후 삭제하도록 변경.
 // 또한 챕터 "본문 안에" 끼어있는 표지성 <img> 태그(파일 전체가 아니라 일부)도 함께 감지.
 // ══════════════════════════════════════════════════════════════
+// S.imgMap 키는 이제 "파일인덱스_이미지순번"(예: "5_0") 형태의 복합 키라서,
+// 파일 삭제 시 단순 parseInt로는 인덱스를 잘못 잘라먹는다 — 전용 재색인 함수로 처리.
+function reindexImgMapAfterDelete(idx){
+  var newImg={};
+  Object.keys(S.imgMap).forEach(function(k){
+    var m=k.match(/^(\d+)_(\d+)$/);
+    if(!m){newImg[k]=S.imgMap[k];return;} // 알 수 없는 형식은 그대로 보존
+    var fi=parseInt(m[1],10),sub=m[2];
+    if(fi<idx)newImg[k]=S.imgMap[k];
+    else if(fi>idx)newImg[(fi-1)+'_'+sub]=S.imgMap[k];
+    // fi===idx (삭제되는 파일 자신의 이미지)는 버림
+  });
+  S.imgMap=newImg;
+}
 function detectInlineCoverImgs(text){
   if(!text)return[];
   var out=[];
@@ -1050,9 +1092,16 @@ function detectInlineCoverImgs(text){
     // alt="cover" / data-name이 cover로 시작 / src에 cover 포함 — 이런 명확한 표지 마커가 있거나,
     // 이 파일에서 "가장 먼저 나오는 이미지"인 경우를 표지 후보로 본다 (카카오페이지는 회차 맨 앞에
     // 반복되는 표지 썸네일을 넣는 경우가 많고, 실제 삽화는 alt="mark" 등 다른 값으로 구분됨).
+    // 단, 목차 위에 작게 들어가는 아이콘 이미지까지 표지로 오인하지 않도록 크기(data-width/height)를 확인 —
+    // 표지는 보통 수백~천 단위 픽셀인 반면 아이콘은 100px 미만인 경우가 많음.
     var strongMarker=/alt\s*=\s*["']cover["']/i.test(tag)||/data-name\s*=\s*["']cover/i.test(tag)||/(?:src|data-src)\s*=\s*["'][^"']*cover[^"']*["']/i.test(tag);
-    var isCover=strongMarker||idx===0;
-    out.push({index:m.index,len:tag.length,tag:tag,looksCover:isCover});
+    var wMatch=tag.match(/data-width\s*=\s*["'](\d+(?:\.\d+)?)/i);
+    var hMatch=tag.match(/data-height\s*=\s*["'](\d+(?:\.\d+)?)/i);
+    var w=wMatch?parseFloat(wMatch[1]):null;
+    var h=hMatch?parseFloat(hMatch[1]):null;
+    var looksLikeIcon=(w!==null&&w<150)||(h!==null&&h<150);
+    var isCover=strongMarker||(idx===0&&!looksLikeIcon);
+    out.push({index:m.index,len:tag.length,tag:tag,looksCover:isCover,looksLikeIcon:looksLikeIcon});
     idx++;
   }
   return out;
@@ -1089,6 +1138,7 @@ function openCoverCleanPanel(){
     else{
       var inline=detectInlineCoverImgs(f.text);
       inline.forEach(function(hit){
+        if(hit.looksLikeIcon)return; // 아이콘 크기의 작은 이미지는 표지·삽화 정리 대상에서 제외
         if(hit.looksCover)items.push({idx:i,type:'cover-inline',name:f.name,label:'본문 내 표지 이미지',index:hit.index,len:hit.len,tag:hit.tag});
         else items.push({idx:i,type:'illustration-inline',name:f.name,label:'삽화 이미지',index:hit.index,len:hit.len,tag:hit.tag});
       });
@@ -1624,8 +1674,20 @@ async function packEpub(title,author,chapters,cssExtra,doPurge,coverData,saveFil
     coverMeta='\n    <meta name="cover" content="cover-img"/>';
   }
   var imgMfItems='';
+  var writtenImgKeys={};
+  Object.keys(S.imgMap).forEach(function(key){
+    var id=S.imgMap[key];
+    if(!id)return;
+    var imgPath='images/img_'+key+'.'+id.ext;
+    var b64=id.b64.split(',')[1];
+    var bin=atob(b64),bts=new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++)bts[i]=bin.charCodeAt(i);
+    ob.file(imgPath,bts,{binary:true});
+    imgMfItems+='    <item id="img_'+key+'" href="'+imgPath+'" media-type="'+id.mt+'"/>\n';
+    writtenImgKeys[key]=true;
+  });
   chapters.forEach(function(ch){
-    if(ch.imgData){
+    if(ch.imgData&&!writtenImgKeys[ch.imgIdx]){
       var imgPath='images/img_'+ch.imgIdx+'.'+ch.imgData.ext;
       var b64=ch.imgData.b64.split(',')[1];
       var bin=atob(b64),bts=new Uint8Array(bin.length);
@@ -1788,14 +1850,21 @@ function makeChapters(files,opts){
       }
     }
 
-    var imgData=S.imgMap[i];
     var processedRaw=raw;
-    if(imgData&&isHtml){
+    if(isHtml){
       var tmp=document.createElement('div');tmp.innerHTML=raw;
-      tmp.querySelectorAll('img').forEach(function(img){
-        img.setAttribute('src','images/img_'+i+'.'+imgData.ext);img.removeAttribute('data-src');
+      var imgEls=Array.from(tmp.querySelectorAll('img'));
+      var anyChanged=false;
+      imgEls.forEach(function(img,imgPos){
+        var key=i+'_'+imgPos;
+        var id=S.imgMap[key];
+        if(id){
+          img.setAttribute('src','images/img_'+key+'.'+id.ext);
+          img.removeAttribute('data-src');
+          anyChanged=true;
+        }
       });
-      processedRaw=tmp.innerHTML;
+      if(anyChanged)processedRaw=tmp.innerHTML;
     }
     var content;
     if(txtFirstLine!==null){
@@ -1806,7 +1875,7 @@ function makeChapters(files,opts){
 
     if(!isHtml){
       var tocTitle=(S.tocOverrides[i]!==undefined)?S.tocOverrides[i]:(txtFirstLine||stem);
-      result.push({id:'ch_'+safeId+'_'+i,file:safeId+'_'+i+'.xhtml',title:tocTitle,content:content,imgData:imgData,imgIdx:i,parentLabel:null});
+      result.push({id:'ch_'+safeId+'_'+i,file:safeId+'_'+i+'.xhtml',title:tocTitle,content:content,parentLabel:null});
       return;
     }
 
@@ -1814,7 +1883,7 @@ function makeChapters(files,opts){
 
     if(S.tocOverrides[i]!==undefined){
       // 사용자가 이 파일의 목차 제목을 직접 지정한 경우: 분리하지 않고 기존처럼 통째로
-      result.push({id:'ch_'+safeId+'_'+i,file:safeId+'_'+i+'.xhtml',title:S.tocOverrides[i],content:tmpC.innerHTML,imgData:imgData,imgIdx:i,parentLabel:null});
+      result.push({id:'ch_'+safeId+'_'+i,file:safeId+'_'+i+'.xhtml',title:S.tocOverrides[i],content:tmpC.innerHTML,parentLabel:null});
       return;
     }
 
@@ -1822,7 +1891,7 @@ function makeChapters(files,opts){
     if(segments.length<=1){
       var singleTitle=(segments.length===1&&segments[0].title)?segments[0].title:stem;
       var singleHtml=segments.length===1?segments[0].html:tmpC.innerHTML;
-      result.push({id:'ch_'+safeId+'_'+i,file:safeId+'_'+i+'.xhtml',title:singleTitle,content:singleHtml,imgData:imgData,imgIdx:i,parentLabel:null});
+      result.push({id:'ch_'+safeId+'_'+i,file:safeId+'_'+i+'.xhtml',title:singleTitle,content:singleHtml,parentLabel:null});
       return;
     }
 
@@ -1833,8 +1902,6 @@ function makeChapters(files,opts){
         file:safeId+'_'+i+'_'+j+'.xhtml',
         title:seg.title||('섹션 '+(j+1)),
         content:seg.html,
-        imgData:(j===0)?imgData:undefined,
-        imgIdx:(j===0)?i:undefined,
         parentLabel:stem
       });
     });
@@ -1923,7 +1990,7 @@ async function buildEpub(){
       var b64=ev.target.result;var mt=file.type||'image/jpeg';
       var ext=mt.includes('png')?'png':mt.includes('gif')?'gif':mt.includes('webp')?'webp':'jpg';
       var imgData={b64:b64,ext:ext,mt:mt,name:file.name};
-      document.querySelectorAll('.img-row-chk:checked').forEach(function(chk){S.imgMap[parseInt(chk.dataset.idx)]=imgData;});
+      document.querySelectorAll('.img-row-chk:checked').forEach(function(chk){S.imgMap[chk.dataset.key]=imgData;});
       renderImgPanel();toast('이미지 적용됨','ok');
     };r.readAsDataURL(file);e.target.value='';
   });
