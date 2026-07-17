@@ -564,6 +564,31 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
         </div>
       </div>
 
+      <!-- ⑤-2 첫 줄 들여쓰기 -->
+      <div class="ep-section">
+        <div class="ep-sec-title">첫 줄 들여쓰기</div>
+        <div id="indentAlertBox" style="display:none;margin-bottom:8px;padding:8px 12px;background:#fff8e8;border:1px solid #e0c060;border-radius:8px;font-size:12px;color:var(--wn);line-height:1.5;">
+          ⚠ 본문에 첫 줄 들여쓰기가 없는 것 같습니다.
+        </div>
+        <div class="ep-ck-row">
+          <input type="checkbox" id="ckIndentAdd">
+          <label for="ckIndentAdd">첫 줄 들여쓰기 적용</label>
+          <span class="ep-default-badge" id="indentDefaultBadge">미체크 = 원본 유지</span>
+        </div>
+        <div id="indentControls" style="display:none;flex-direction:column;gap:9px;margin-top:6px;">
+          <div class="ep-row">
+            <span class="ep-lbl">들여쓰기 크기</span>
+            <input type="range" id="epIndent" min="0.5" max="3" step="0.1" value="1" class="ep-rng">
+            <input type="number" id="epIndentNum" min="0.5" max="3" step="0.1" value="1" class="num-input">
+            <span class="ep-val" id="lblEpIndent">1em</span>
+          </div>
+          <div style="padding:8px 12px;background:var(--surf);border-radius:6px;border:1px solid var(--bd);">
+            <p id="epIndentPreview" style="margin:0;font-size:13px;line-height:1.75;color:#222;text-indent:1em;">그녀는 조용히 문을 열고 들어섰다. 방 안은 어둡고 고요했다.</p>
+          </div>
+          <div style="font-size:10.5px;color:var(--mu);line-height:1.5;">※ 본문 &lt;p&gt; 태그에 text-indent를 적용해요. 이미 들여쓰기가 있는 원본에 겹쳐 적용하면 과하게 들여써질 수 있으니 주의하세요.</div>
+        </div>
+      </div>
+
       <!-- ⑥ 빈 줄(공백 단락) 간격 -->
       <div class="ep-section">
         <div class="ep-sec-title">빈 줄(공백 단락) 간격</div>
@@ -1093,6 +1118,24 @@ async function detectTitleHr(zip){
   return false;
 }
 
+/* 본문(p)에 첫 줄 들여쓰기(text-indent)가 이미 적용돼 있는지 감지 —
+   CSS 파일들과, 만일을 대비해 xhtml 인라인 style까지 훑어서 text-indent 선언이
+   하나도 없으면 "들여쓰기 없음"으로 판단한다. 값이 0이어도 원작자가 의도적으로
+   설정한 것일 수 있으니 존재 여부만 본다(hr 감지와 동일한 방식). */
+async function detectNoIndent(zip){
+  var cssFiles=Object.keys(zip.files).filter(function(p){return/\.css$/i.test(p);});
+  for(var i=0;i<cssFiles.length;i++){
+    var ctxt=await zip.file(cssFiles[i]).async('string');
+    if(/text-indent\s*:/i.test(ctxt))return false;
+  }
+  var files=Object.keys(zip.files).filter(function(p){return/\.(xhtml|html|htm)$/i.test(p)&&!/cover|title|nav/i.test(p);});
+  for(var j=0;j<Math.min(files.length,5);j++){
+    var htxt=await zip.file(files[j]).async('string');
+    if(/text-indent\s*:/i.test(htxt))return false;
+  }
+  return true;
+}
+
 /* 본문 단락(<p>)을 감싸는 가장 바깥 div의 class 감지 — body에 직접 줄높이를 줘도
    .aegix 같은 래퍼 class가 더 높은 우선순위로 줄높이를 따로 갖고 있는 EPUB을 위함 */
 function detectContentWrapClass(html){
@@ -1442,6 +1485,12 @@ document.getElementById('fileEpub').addEventListener('change',async function(){
       var hasHr=await detectTitleHr(epubZip);
       hrBox.style.display=hasHr?'block':'none';
     }
+    var indentBox=document.getElementById('indentAlertBox');
+    if(indentBox){
+      indentBox.style.display='none';
+      var noIndent=await detectNoIndent(epubZip);
+      indentBox.style.display=noIndent?'block':'none';
+    }
   }catch(e){toast('EPUB 읽기 실패: '+e.message,'err');}
 });
 
@@ -1677,6 +1726,21 @@ function updateEpBlankPreview(){
   var h=document.getElementById('epBlankH').value;
   var el=document.getElementById('epBlankPreview');
   if(el)el.style.lineHeight=h+'em';
+}
+
+/* 첫 줄 들여쓰기 컨트롤 */
+document.getElementById('ckIndentAdd').addEventListener('change',function(){
+  document.getElementById('indentControls').style.display=this.checked?'flex':'none';
+  document.getElementById('indentDefaultBadge').style.display=this.checked?'none':'inline-block';
+});
+document.getElementById('epIndent').addEventListener('input',function(){
+  document.getElementById('lblEpIndent').textContent=parseFloat(this.value).toFixed(1)+'em';
+  updateEpIndentPreview();
+});
+function updateEpIndentPreview(){
+  var v=document.getElementById('epIndent').value;
+  var el=document.getElementById('epIndentPreview');
+  if(el)el.style.textIndent=v+'em';
 }
 
 document.getElementById('btnEpubSave').addEventListener('click',async function(){
@@ -1915,6 +1979,16 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
         if(bi%20===0)await tick();
       }
       if(blankCnt)toast('빈 줄 '+blankCnt+'개 '+(blankMode==='remove'?'삭제됨':'정리됨'),'ok');
+    }
+
+    /* 첫 줄 들여쓰기 적용 — p 셀렉터(및 감지된 래퍼 class p)에 text-indent 추가 */
+    if(document.getElementById('ckIndentAdd').checked){
+      var indentV=document.getElementById('epIndent').value;
+      patched=patchBlock(patched,'p',{'text-indent':indentV+'em'});
+      var indentWrapClass=sampleHtml?detectContentWrapClass(sampleHtml):null;
+      if(indentWrapClass){
+        patched=patchBlock(patched,'.'+indentWrapClass+' p',{'text-indent':indentV+'em'});
+      }
     }
 
     /* 제목 밑 구분선(hr) 제거 */
