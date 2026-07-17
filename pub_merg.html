@@ -132,7 +132,7 @@ input[type="file"]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0
 ══════════════════════════════════════════ -->
 <div class="tab-page active" id="tab-epub-merge">
 <div class="page">
-  <div class="info-box">📚 EPUB 파일을 여러 개 업로드하면 <strong>챕터·목차를 모두 살려서</strong> 하나로 합칩니다. <strong>ZIP으로 묶어서</strong> 한 번에 올려도 돼요.</div>
+  <div class="info-box">📚 EPUB 파일을 여러 개 업로드하면 <strong>챕터·목차를 모두 살려서</strong> 하나로 합칩니다. <strong>ZIP으로 묶어서</strong> 한 번에 올려도 돼요. 2권 이상 합칠 경우 각 EPUB(권)이 <strong>대목차</strong>가 되고 그 안의 기존 챕터가 <strong>하위 목차</strong>로 들어가요 — 대목차 이름은 파일명 기준으로 자동 채워지며 목록에서 직접 수정할 수 있어요.</div>
   <div class="two-col">
     <div style="display:flex;flex-direction:column;gap:14px;">
       <div class="card">
@@ -843,7 +843,7 @@ async function addEmFiles(fl){
   for(var ri=0;ri<rawBufs.length;ri++){
     var rb=rawBufs[ri];
     var chapters=await parseEpubChapters(rb.buf);
-    S.emEpubs.push({name:rb.name,buf:rb.buf,chapters:chapters});
+    S.emEpubs.push({name:rb.name,buf:rb.buf,chapters:chapters,volumeLabel:emDefaultVolumeLabel(rb.name)});
   }
   document.getElementById('em-loading').style.display='none';
   renderEmList();
@@ -953,6 +953,18 @@ function emComputeSegments(bodyContent,fallbackTitle){
   }catch(e){return[{title:fallbackTitle,html:bodyContent}];}
 }
 
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 권(EPUB 파일) 대목차 라벨 — 파일명을 그대로 다듬어서 사용
+// (제목/저자 추출과 달리 권수 표기는 일부러 지우지 않고 그대로 둠)
+// ══════════════════════════════════════════════════════════════
+function emDefaultVolumeLabel(filename){
+  var stem=String(filename||'').replace(/\.(epub|zip)$/i,'').normalize('NFC');
+  stem=stem.replace(/^\s*[\[\(<【]?\s*(?:공유\s*금지|공금|유출\s*금지|외부\s*유출\s*금지|배포\s*금지)\s*[\]\)>】]?[_\s-]+/i,'');
+  stem=stem.replace(/[_\s-]+(?:공유\s*금지|공금|유출\s*금지|배포\s*금지)\s*$/i,'');
+  stem=stem.replace(/_/g,' ').replace(/\s+/g,' ').trim();
+  return stem||filename;
+}
+
 async function parseEpubChapters(buf){
   var chapters=[];
   try{
@@ -1015,9 +1027,23 @@ function renderEmList(){
     var header=document.createElement('div');
     header.style.cssText='display:flex;align-items:center;gap:7px;padding:6px 8px;background:var(--ac);color:#fff;border-radius:7px;margin-top:'+(ei>0?'6px':'0px')+';';
     var kb=(epub.buf.byteLength/1024).toFixed(0);
-    header.innerHTML='<span style="font-family:\'DM Mono\',monospace;font-size:10px;opacity:.7;">'+String(ei+1).padStart(2,'0')+'</span>'
-      +'<span style="flex:1;font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="'+esc(epub.name)+'">'+esc(epub.name)+'</span>'
-      +'<span style="font-size:10px;opacity:.7;font-family:\'DM Mono\',monospace;">'+kb+'KB</span>';
+    var numSpan=document.createElement('span');
+    numSpan.style.cssText='font-family:\'DM Mono\',monospace;font-size:10px;opacity:.7;flex-shrink:0;';
+    numSpan.textContent=String(ei+1).padStart(2,'0');
+    header.appendChild(numSpan);
+    // [추가 기능] 권(대목차) 표시명 — 기본값은 파일명, 직접 수정 가능 (합친 EPUB의 목차 대제목으로 쓰임)
+    var volInput=document.createElement('input');
+    volInput.type='text';
+    volInput.value=epub.volumeLabel!=null?epub.volumeLabel:emDefaultVolumeLabel(epub.name);
+    volInput.title=epub.name;
+    volInput.style.cssText='flex:1;min-width:0;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35);border-radius:5px;color:#fff;font-size:12px;font-weight:500;padding:3px 7px;outline:none;font-family:\'Noto Sans KR\',sans-serif;';
+    volInput.addEventListener('change',function(){epub.volumeLabel=this.value.trim()||emDefaultVolumeLabel(epub.name);});
+    volInput.addEventListener('blur',function(){epub.volumeLabel=this.value.trim()||emDefaultVolumeLabel(epub.name);});
+    header.appendChild(volInput);
+    var kbSpan=document.createElement('span');
+    kbSpan.style.cssText='font-size:10px;opacity:.7;font-family:\'DM Mono\',monospace;flex-shrink:0;';
+    kbSpan.textContent=kb+'KB';
+    header.appendChild(kbSpan);
     var delEpub=document.createElement('button');
     delEpub.style.cssText='background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:4px;padding:2px 7px;font-size:11px;cursor:pointer;flex-shrink:0;';
     delEpub.textContent='삭제';
@@ -1221,11 +1247,11 @@ async function buildMergedEpub(){
           if(segs.length>=2){
             segs.forEach(function(seg,si){
               var chId='ch_'+chIdx+'_'+si,chFile=chId+'.xhtml';
-              allChapters.push({id:chId,file:chFile,title:seg.title||('섹션 '+(si+1)),content:seg.html});
+              allChapters.push({id:chId,file:chFile,title:seg.title||('섹션 '+(si+1)),content:seg.html,volIdx:ei});
             });
           }else{
             var chId='ch_'+chIdx,chFile=chId+'.xhtml';
-            allChapters.push({id:chId,file:chFile,title:ch.title,content:bodyContent});
+            allChapters.push({id:chId,file:chFile,title:ch.title,content:bodyContent,volIdx:ei});
           }
           chIdx++;
         }
@@ -1260,9 +1286,47 @@ async function buildMergedEpub(){
     }
     eprog(85,'XHTML 생성...');await tick();
     allChapters.forEach(function(ch){ob.file(ch.file,mkXhtml(ch.title,ch.content));});
-    var navLi=allChapters.map(function(ch){return '      <li><a href="'+ch.file+'">'+escX(ch.title)+'</a></li>';}).join('\n');
+    // [추가 기능] 계층 목차 — 합친 EPUB이 2권 이상이면 각 권(파일)을 대목차로,
+    // 그 안의 기존 챕터(제1장 등)를 하위 목차로 묶어 nav.xhtml / toc.ncx를 생성한다.
+    var volumeGroups=[],volMap={};
+    allChapters.forEach(function(ch){
+      if(!volMap[ch.volIdx]){
+        var srcEpub=S.emEpubs[ch.volIdx];
+        var lbl=(srcEpub&&srcEpub.volumeLabel)||(srcEpub?emDefaultVolumeLabel(srcEpub.name):'');
+        volMap[ch.volIdx]={label:lbl,chapters:[]};
+        volumeGroups.push(volMap[ch.volIdx]);
+      }
+      volMap[ch.volIdx].chapters.push(ch);
+    });
+    var navLi,ncxPts;
+    if(volumeGroups.length>=2){
+      navLi=volumeGroups.map(function(vg){
+        if(vg.chapters.length===1){
+          var c=vg.chapters[0];
+          return '      <li><a href="'+c.file+'">'+escX(c.title)+'</a></li>';
+        }
+        var childLi=vg.chapters.map(function(c){return '          <li><a href="'+c.file+'">'+escX(c.title)+'</a></li>';}).join('\n');
+        return '      <li><a href="'+vg.chapters[0].file+'">'+escX(vg.label)+'</a>\n        <ol>\n'+childLi+'\n        </ol>\n      </li>';
+      }).join('\n');
+      var ncxOrder=0;
+      ncxPts=volumeGroups.map(function(vg,vi){
+        if(vg.chapters.length===1){
+          var c=vg.chapters[0];ncxOrder++;
+          return '    <navPoint id="np_v'+vi+'" playOrder="'+ncxOrder+'">\n      <navLabel><text>'+escX(c.title)+'</text></navLabel>\n      <content src="'+c.file+'"/>\n    </navPoint>';
+        }
+        ncxOrder++;
+        var parentOrder=ncxOrder;
+        var childPts=vg.chapters.map(function(c,ci2){
+          ncxOrder++;
+          return '      <navPoint id="np_v'+vi+'_'+ci2+'" playOrder="'+ncxOrder+'">\n        <navLabel><text>'+escX(c.title)+'</text></navLabel>\n        <content src="'+c.file+'"/>\n      </navPoint>';
+        }).join('\n');
+        return '    <navPoint id="np_v'+vi+'" playOrder="'+parentOrder+'">\n      <navLabel><text>'+escX(vg.label)+'</text></navLabel>\n      <content src="'+vg.chapters[0].file+'"/>\n'+childPts+'\n    </navPoint>';
+      }).join('\n');
+    }else{
+      navLi=allChapters.map(function(ch){return '      <li><a href="'+ch.file+'">'+escX(ch.title)+'</a></li>';}).join('\n');
+      ncxPts=allChapters.map(function(ch,pi){return '    <navPoint id="np'+pi+'" playOrder="'+(pi+1)+'">\n      <navLabel><text>'+escX(ch.title)+'</text></navLabel>\n      <content src="'+ch.file+'"/>\n    </navPoint>';}).join('\n');
+    }
     ob.file('nav.xhtml','<?xml version="1.0" encoding="utf-8"?>\n<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="ko">\n<head><meta charset="utf-8"/><title>목차</title></head>\n<body>\n  <nav epub:type="toc">\n    <ol>\n'+navLi+'\n    </ol>\n  </nav>\n</body>\n</html>');
-    var ncxPts=allChapters.map(function(ch,pi){return '    <navPoint id="np'+pi+'" playOrder="'+(pi+1)+'">\n      <navLabel><text>'+escX(ch.title)+'</text></navLabel>\n      <content src="'+ch.file+'"/>\n    </navPoint>';}).join('\n');
     ob.file('toc.ncx','<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">\n<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">\n  <head><meta name="dtb:uid" content="'+uid+'"/></head>\n  <docTitle><text>'+escX(title)+'</text></docTitle>\n  <navMap>\n'+ncxPts+'\n  </navMap>\n</ncx>');
     var mfI=coverMfItem+imgMfItems+'    <item id="style" href="style.css" media-type="text/css"/>\n    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>\n    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n'+allChapters.map(function(ch){return '    <item id="'+ch.id+'" href="'+ch.file+'" media-type="application/xhtml+xml"/>';}).join('\n');
     var spI=coverSpItem+allChapters.map(function(ch){return '    <itemref idref="'+ch.id+'"/>';}).join('\n');
