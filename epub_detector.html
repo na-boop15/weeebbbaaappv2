@@ -291,7 +291,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if(!opfFile) throw new Error('OPF 파일을 찾을 수 없음: ' + opfPath);
     const opfXml = await opfFile.async('string');
     const opfDoc = new DOMParser().parseFromString(opfXml, 'application/xml');
-    return {zip, opfPath, opfDir, opfDoc};
+    return {zip, opfPath, opfDir, opfDoc, opfXml};
   }
 
   function getMeta(opfDoc){
@@ -300,22 +300,19 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const els = metaNode ? metaNode.getElementsByTagName(tag) : [];
       return els.length ? els[0].textContent.trim() : '';
     };
-    let generator = '';
+    let generatorMeta = '';
+    let coverId = '';
     if(metaNode){
       const metas = metaNode.getElementsByTagName('meta');
       for(const m of metas){
-        if((m.getAttribute('name')||'').toLowerCase()==='generator'){
-          generator = m.getAttribute('content')||'';
-        }
+        const nm = (m.getAttribute('name')||'').toLowerCase();
+        if(nm === 'generator') generatorMeta = m.getAttribute('content')||'';
+        if(nm === 'cover') coverId = m.getAttribute('content')||'';
       }
     }
     return {
-      title: get('title'),
-      creator: get('creator'),
-      publisher: get('publisher'),
-      language: get('language'),
-      identifier: get('identifier'),
-      generator
+      title: get('title'), creator: get('creator'), publisher: get('publisher'),
+      language: get('language'), identifier: get('identifier'), generatorMeta, coverId
     };
   }
 
@@ -325,6 +322,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if(manifestNode){
       for(const item of manifestNode.getElementsByTagName('item')){
         items[item.getAttribute('id')] = {
+          id: item.getAttribute('id'),
           href: item.getAttribute('href'),
           mediaType: item.getAttribute('media-type')||'',
           properties: item.getAttribute('properties')||''
@@ -345,10 +343,50 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return spine;
   }
 
-  const CONVERTER_SIGNS = /calibre|pandoc|sigil|txt2epub|txt.?to.?epub|텍스트.?변환|텍변환|epub.?util|epub-?builder|writer2epub|plain.?text/i;
-  const GENERIC_LABEL_RE = /^(chapter|ch|section|sec|part|화|장|권|제?\s*\d+\s*(화|장|권|절)?|\d+)\s*[.\-:]?\s*\d*$/i;
-  const GENERIC_FILENAME_RE = /^(text|part|chap(ter)?|split|item|page|sec(tion)?|body|content|file)[-_ ]?0*\d+\.x?html?$/i;
-  const SCENE_BREAK_TEXT_RE = /^[\s]*([\*※#~\-–—=_·・○●□■]{3,}|[0#]{1}[0#\s]{2,})[\s]*$/;
+  // 알려진 텍스트→EPUB 변환 도구/편집기 서명 (OPF 메타데이터 전체 텍스트에서 검색)
+  const CONVERTER_SIGNS = /calibre|pandoc|sigil\s*version|txt2epub|txt.?to.?epub|텍스트.?변환|텍변환|epub.?util|epub-?builder|writer2epub/i;
+
+  // "Chapter 1", "Section 3", 순수 숫자 등 변환기가 기본 생성하는 목차 라벨 (화/장/권은 장르 관용 표기라 제외)
+  const GENERIC_LABEL_RE = /^(chapter|ch|section|sec|part)\s*[.\-:]?\s*\d+$/i;
+  const PURE_NUMBER_RE = /^\d+$/;
+  const GENERIC_FILENAME_RE = /(?:^|[_-])(text|part|chap(?:ter)?|split|item|page|sec(?:tion)?|body|content|file)[-_]?0*\d+\.x?html?$/i;
+  const SCENE_BREAK_TEXT_RE = /^[\s]*([\*※#~\-–—=_·・○●□■＊]{3,}|[0#]{1}[0#\s]{2,})[\s]*$/;
+
+  // CSS에서 서사적 구분(회상/독백/강조 등)에 쓰일 법한 클래스인지 걸러내기 위한 제외 패턴
+  // (표지/목차/장면전환/정렬 등 구조적 유틸리티 클래스는 후보에서 제외)
+  const UTILITY_CLASS_RE = /scene|break|star|toc|nav|right|left|center|justify|indent|credit|footer|header|title|cover|calibre$|calibre\d*$/i;
+
+  function parseCssClasses(cssText){
+    const map = {}; // className -> {italic,colorful,bold}
+    const ruleRe = /([^{}]+)\{([^{}]*)\}/g;
+    let m;
+    while((m = ruleRe.exec(cssText))){
+      const selectors = m[1].split(',').map(s=>s.trim());
+      const body = m[2];
+      const italic = /font-style\s*:\s*italic/i.test(body);
+      const boldMatch = body.match(/font-weight\s*:\s*(\d+|bold)/i);
+      const bold = !!boldMatch && (boldMatch[1].toLowerCase()==='bold' || parseInt(boldMatch[1],10)>=600);
+      const colorMatch = body.match(/(?<!background-)color\s*:\s*(#[0-9a-f]{3,8}|rgb\([^)]+\)|[a-z]+)/i);
+      let colorful = false;
+      if(colorMatch){
+        const v = colorMatch[1].toLowerCase().replace(/\s/g,'');
+        const neutral = ['#000','#000000','#fff','#ffffff','black','white','inherit','initial','currentcolor','#111','#111111','#222','#222222','#333','#333333'];
+        colorful = !neutral.includes(v);
+      }
+      if(!italic && !bold && !colorful) continue;
+      for(const sel of selectors){
+        const cm = sel.match(/^\.([a-zA-Z_][\w-]*)$/); // 단순 클래스 선택자만
+        if(cm){
+          const cls = cm[1];
+          if(!map[cls]) map[cls] = {italic:false,bold:false,colorful:false};
+          map[cls].italic = map[cls].italic || italic;
+          map[cls].bold = map[cls].bold || bold;
+          map[cls].colorful = map[cls].colorful || colorful;
+        }
+      }
+    }
+    return map;
+  }
 
   async function analyzeFile(file){
     const flagsList = [];
@@ -359,10 +397,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       if(hit) score += weight;
     }
 
-    let zip, opfDoc, opfDir;
+    let zip, opfDoc, opfDir, opfXml;
     try{
       const loaded = await loadEpub(file);
-      zip = loaded.zip; opfDoc = loaded.opfDoc; opfDir = loaded.opfDir;
+      zip = loaded.zip; opfDoc = loaded.opfDoc; opfDir = loaded.opfDir; opfXml = loaded.opfXml;
     }catch(err){
       return { file, name:file.name, error: 'EPUB 구조를 읽을 수 없습니다 (' + err.message + ')', score:0, verdict:'error', flags:[], stats:{} };
     }
@@ -374,64 +412,75 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const cssItems = items.filter(it => it.mediaType === 'text/css');
     const imageItems = items.filter(it => /^image\//.test(it.mediaType));
     const fontItems = items.filter(it => /font/.test(it.mediaType) || /\.(ttf|otf|woff2?)$/i.test(it.href||''));
-    const hasCoverProp = items.some(it => /cover-image/.test(it.properties));
+    const hasCoverProp = items.some(it => /cover-image/.test(it.properties))
+      || (meta.coverId && items.some(it => it.id === meta.coverId && /^image\//.test(it.mediaType)));
     const navItem = items.find(it => /nav/.test(it.properties));
     const ncxItem = items.find(it => it.mediaType === 'application/x-dtbncx+xml');
 
     const spineHrefEntries = spine.map(idref => manifest[idref]).filter(Boolean)
       .filter(it => /html|xhtml/.test(it.mediaType) && !/nav/.test(it.properties));
 
-    let totalCssLen = 0, customClassCount = 0, cssText = '';
+    // --- CSS ---
+    let totalCssLen = 0, cssText = '';
     for(const c of cssItems){
       const p = joinPath(opfDir, c.href);
       const f = zip.file(p);
       if(f){
-        try{
-          const txt = await f.async('string');
-          cssText += txt + '\n';
-          totalCssLen += txt.length;
-        }catch(e){}
+        try{ const txt = await f.async('string'); cssText += txt + '\n'; totalCssLen += txt.length; }catch(e){}
       }
     }
-    if(cssText){
-      const classMatches = cssText.match(/\.[a-zA-Z_][\w-]*\s*\{/g) || [];
-      customClassCount = new Set(classMatches.map(m=>m.trim())).size;
-    }
+    const classSelMatches = cssText.match(/\.[a-zA-Z_][\w-]*\s*\{/g) || [];
+    const customClassCount = new Set(classSelMatches.map(m=>m.trim())).size;
+    const classPropsMap = parseCssClasses(cssText);
+    const candidateDistinctiveClasses = Object.keys(classPropsMap).filter(cls =>
+      (classPropsMap[cls].italic || classPropsMap[cls].bold || classPropsMap[cls].colorful) && !UTILITY_CLASS_RE.test(cls));
+
     stats.cssFileCount = cssItems.length;
     stats.totalCssLen = totalCssLen;
     stats.customClassCount = customClassCount;
 
     flag('no_css', 'CSS 파일 없음 또는 실질적으로 비어있음', cssItems.length===0 || totalCssLen < 120, 18,
       `CSS 파일 ${cssItems.length}개, 총 ${totalCssLen}자`);
-    flag('minimal_css', '커스텀 클래스 스타일 거의 없음 (2개 미만)', cssItems.length>0 && customClassCount < 2, 12,
-      `커스텀 클래스 선택자 ${customClassCount}개`);
-    flag('rich_css', '커스텀 클래스 스타일 다수 존재 (5개 이상)', customClassCount >= 5, -14,
+    flag('minimal_css', '커스텀 클래스 스타일이 거의 없음 (2개 미만)', cssItems.length>0 && customClassCount < 2, 6,
       `커스텀 클래스 선택자 ${customClassCount}개`);
 
-    const generatorHit = CONVERTER_SIGNS.test(meta.generator) || CONVERTER_SIGNS.test(meta.creator);
-    flag('generator_sign', '메타데이터에 텍스트 변환 도구 흔적', generatorHit, 14,
-      meta.generator ? `generator: ${meta.generator}` : '(generator 태그 없음, creator 문구에서 발견)');
-    flag('meta_thin', '출판사/식별자 등 메타데이터가 매우 빈약함', !meta.publisher && !generatorHit && (meta.identifier==='' || /^urn:uuid:/i.test(meta.identifier)), 8,
+    // --- 변환기 서명 / 메타데이터 (OPF 전체 텍스트 대상 검색) ---
+    const generatorHit = CONVERTER_SIGNS.test(opfXml);
+    flag('generator_sign', '메타데이터에 텍스트 변환/편집 도구 흔적', generatorHit, 16,
+      meta.generatorMeta ? `generator: ${meta.generatorMeta}` : '(OPF 메타데이터 내 도구 서명 발견)');
+    flag('meta_thin', '출판사 등 메타데이터가 매우 빈약함', !meta.publisher && !generatorHit && (meta.identifier==='' || /^urn:uuid:/i.test(meta.identifier)), 3,
       `publisher: ${meta.publisher||'(없음)'}`);
 
+    // --- 이미지 / 표지 ---
     stats.imageCount = imageItems.length;
     flag('no_images', '이미지가 전혀 없음', imageItems.length===0, 10, `이미지 파일 ${imageItems.length}개`);
-    flag('no_cover_marked', '이미지는 있으나 표지로 지정된 항목 없음', imageItems.length>0 && !hasCoverProp, 4, '');
-    flag('has_cover_and_images', '표지 이미지 및 삽화 존재', imageItems.length>0 && hasCoverProp, -10,
-      `이미지 ${imageItems.length}개, 표지 지정됨`);
+    flag('no_cover_marked', '이미지는 있으나 표지로 명확히 지정된 항목 없음', imageItems.length>0 && !hasCoverProp, 4, '');
+    // 표지 유무는 텍변펍 도구도 기본으로 넣어주는 경우가 많아 판별력이 낮음 (채점에서 제외, 정보만 표시)
+    flag('has_cover_and_images', '표지 이미지 및 삽화 존재 (참고용, 채점 제외)', false, 0,
+      `이미지 ${imageItems.length}개, 표지 ${hasCoverProp?'지정됨':'미지정'}`);
 
-    flag('embedded_fonts', '폰트 파일 임베딩됨', fontItems.length>0, -8, `폰트 파일 ${fontItems.length}개`);
+    const GENERIC_FONT_RE = /^(batang|dotum|gulim|malgun|nanumgothic|nanummyeongjo|arial|times|myriad)(light|bold|regular|medium)?\.(ttf|otf|woff2?)$/i;
+    const genericFontCount = fontItems.filter(it => GENERIC_FONT_RE.test((it.href||'').split('/').pop())).length;
+    flag('generic_bundled_fonts', '임베딩된 폰트가 시스템 기본 서체뿐 (변환 도구가 자동 삽입)', fontItems.length>0 && genericFontCount===fontItems.length, 6,
+      `폰트: ${fontItems.map(f=>f.href.split('/').pop()).join(', ')}`);
+    flag('custom_fonts', '시스템 기본 서체 외의 폰트가 임베딩됨', fontItems.length>0 && genericFontCount<fontItems.length, -8,
+      `폰트: ${fontItems.map(f=>f.href.split('/').pop()).join(', ')}`);
 
+    // --- 챕터 파일명 / 분할 ---
     stats.chapterFileCount = spineHrefEntries.length;
     const basenames = spineHrefEntries.map(it => (it.href.split('/').pop()||''));
     const genericNameCount = basenames.filter(n => GENERIC_FILENAME_RE.test(n)).length;
     const genericNameRatio = basenames.length ? genericNameCount/basenames.length : 0;
-    flag('generic_filenames', '챕터 파일명이 일반 변환기 패턴 (text0001.html 등)', genericNameRatio >= 0.7 && basenames.length>=2, 10,
+    flag('generic_filenames', '챕터 파일명이 변환기 기본 패턴 (text0001.html, index_split_000.html 등)', genericNameRatio >= 0.7 && basenames.length>=2, 10,
       `${genericNameCount}/${basenames.length}개 파일이 일반 패턴과 일치`);
 
+    // --- 본문 분석 ---
     const sampleEntries = spineHrefEntries.slice(0, 60);
-    let totalChars = 0, totalP = 0, pWithClassOrStyle = 0, emphasisCount = 0, headingCount = 0;
-    let sceneBreakPlaintextHits = 0, straightQuoteChapters = 0, curlyQuoteChapters = 0;
+    let totalChars = 0, totalP = 0;
+    let sceneBreakPlaintextHits = 0;
+    let distinctiveMeaningfulCount = 0;
+    let misplacedHeadingHits = 0, headingCheckedFiles = 0;
+    const classCounter = {};
 
     for(const it of sampleEntries){
       const p = joinPath(opfDir, it.href);
@@ -453,49 +502,73 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const ps = body.getElementsByTagName('p');
       totalP += ps.length;
       for(const pEl of ps){
-        if(pEl.getAttribute('class') || pEl.getAttribute('style')) pWithClassOrStyle++;
+        const cls = pEl.getAttribute('class') || '(none)';
+        classCounter[cls] = (classCounter[cls]||0) + 1;
+        const hasStyleAttr = !!(pEl.getAttribute('class') || pEl.getAttribute('style'));
         const txt = (pEl.textContent||'').trim();
-        if(SCENE_BREAK_TEXT_RE.test(txt)) sceneBreakPlaintextHits++;
+        if(!hasStyleAttr && SCENE_BREAK_TEXT_RE.test(txt)) sceneBreakPlaintextHits++;
       }
-      emphasisCount += body.getElementsByTagName('em').length + body.getElementsByTagName('strong').length
-        + body.getElementsByTagName('b').length + body.getElementsByTagName('i').length
-        + body.getElementsByTagName('blockquote').length;
-      const heads = [].concat(
-        Array.from(body.getElementsByTagName('h1')),
-        Array.from(body.getElementsByTagName('h2')),
-        Array.from(body.getElementsByTagName('h3'))
-      );
-      headingCount += heads.length;
 
-      const plain = body.textContent || '';
-      const hasCurly = /[“”‘’]/.test(plain);
-      const hasStraight = /["']/.test(plain);
-      if(hasCurly) curlyQuoteChapters++;
-      else if(hasStraight) straightQuoteChapters++;
+      // 서사 구분용 스타일(회상/독백/강조 등) 사용 여부: em/strong/blockquote 태그 + CSS 후보 클래스
+      const tagEls = [].concat(
+        Array.from(body.getElementsByTagName('em')),
+        Array.from(body.getElementsByTagName('strong')),
+        Array.from(body.getElementsByTagName('blockquote'))
+      );
+      for(const el of tagEls){
+        if((el.textContent||'').trim().length >= 2) distinctiveMeaningfulCount++;
+      }
+      for(const cls of candidateDistinctiveClasses){
+        let els = [];
+        try{ els = Array.from(body.getElementsByClassName(cls)); }catch(e){}
+        for(const el of els){
+          if((el.textContent||'').trim().length >= 2) distinctiveMeaningfulCount++;
+        }
+      }
+
+      // 챕터 제목(h태그)이 파일 맨 앞이 아니라 본문 중간에 있는지 (여러 화가 한 파일에 뭉쳐있을 가능성)
+      const bodyHtml = html.slice(html.toLowerCase().indexOf('<body'));
+      const headingMatches = [...bodyHtml.matchAll(/<h[1-4][^>]*>/gi)];
+      if(headingMatches.length > 0){
+        headingCheckedFiles++;
+        const lastPos = headingMatches[headingMatches.length-1].index;
+        const ratio = bodyHtml.length ? lastPos / bodyHtml.length : 0;
+        if(headingMatches.length >= 2 || ratio > 0.15){
+          misplacedHeadingHits++;
+        }
+      }
     }
 
     stats.totalChars = totalChars;
     stats.totalP = totalP;
-    stats.emphasisCount = emphasisCount;
-    stats.headingCount = headingCount;
+    stats.headingCheckedFiles = headingCheckedFiles;
+    stats.misplacedHeadingHits = misplacedHeadingHits;
 
-    const classStyleRatio = totalP ? pWithClassOrStyle/totalP : 0;
-    flag('flat_paragraphs', '단락 대부분이 스타일/클래스 없이 밋밋함 + 강조 서식 전무', classStyleRatio < 0.05 && emphasisCount===0 && totalP>10, 16,
-      `클래스/스타일 적용 단락 ${(classStyleRatio*100).toFixed(0)}%, 강조 태그 ${emphasisCount}개`);
+    // 단락 클래스 균일성: 사실상 모든 문단이 단 하나의 클래스(혹은 클래스 없음)로만 처리되는지
+    let dominantClass = null, dominantCount = 0;
+    for(const k in classCounter){ if(classCounter[k] > dominantCount){ dominantCount = classCounter[k]; dominantClass = k; } }
+    const dominantRatio = totalP ? dominantCount/totalP : 0;
+    const distinctClassKinds = Object.keys(classCounter).length;
+    stats.dominantClass = dominantClass;
+    stats.dominantRatio = dominantRatio;
+
+    flag('paragraph_uniform_styling', '거의 모든 문단이 단일 스타일(또는 무클래스)로만 처리됨', totalP > 10 && dominantRatio >= 0.92, 18,
+      `가장 많이 쓰인 문단 클래스 "${dominantClass}" 비율 ${(dominantRatio*100).toFixed(0)}% (문단 서식 종류 ${distinctClassKinds}개)`);
+
+    const distinctiveRatio = totalP ? distinctiveMeaningfulCount/totalP : 0;
+    flag('no_distinctive_style', '회상/독백/강조 등 서사 구분용 스타일이 전혀 없음', totalP > 10 && distinctiveMeaningfulCount === 0, 16,
+      `강조/이탤릭/색상 서식이 적용된 구간 0건`);
+    flag('distinctive_style_used', '회상/독백/강조 등에 스타일이 선택적으로 사용됨', distinctiveMeaningfulCount > 0 && distinctiveRatio < 0.5, -16,
+      `서식이 적용된 구간 ${distinctiveMeaningfulCount}건 (전체 문단의 ${(distinctiveRatio*100).toFixed(1)}%)`);
 
     flag('plaintext_scene_break', '장면 전환이 스타일 없는 텍스트 기호로만 표시됨 (***, ---- 등)', sceneBreakPlaintextHits>=2, 10,
-      `일반 텍스트 장면전환 기호 ${sceneBreakPlaintextHits}회 발견`);
+      `무서식 장면전환 기호 ${sceneBreakPlaintextHits}회 발견`);
 
     flag('single_giant_file', '챕터 분할 없이 하나(또는 극소수) 파일에 전체 텍스트', spineHrefEntries.length<=2 && totalChars>40000, 14,
       `챕터 파일 ${spineHrefEntries.length}개, 총 텍스트 ${totalChars}자`);
 
-    flag('straight_quotes_only', '문장부호가 직선 따옴표뿐이고 곡선 따옴표 없음', straightQuoteChapters>0 && curlyQuoteChapters===0, 6,
-      `직선따옴표 챕터 ${straightQuoteChapters}개 / 곡선따옴표 챕터 ${curlyQuoteChapters}개`);
-    flag('curly_quotes', '곡선 따옴표(" " \' \') 사용됨', curlyQuoteChapters>0, -6,
-      `곡선따옴표 사용 챕터 ${curlyQuoteChapters}개`);
-    flag('emphasis_used', '강조(em/strong) 또는 인용 서식 사용됨', emphasisCount>0, -8, `강조/인용 태그 ${emphasisCount}개`);
-
-    let navLabels = [];
+    // --- 목차(nav/ncx) ---
+    let navEntries = [];
     if(navItem){
       const p = joinPath(opfDir, navItem.href);
       const f = zip.file(p);
@@ -506,7 +579,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           try{ doc = new DOMParser().parseFromString(html, 'application/xhtml+xml'); }
           catch(e){ doc = new DOMParser().parseFromString(html, 'text/html'); }
           const as = doc.querySelectorAll ? doc.querySelectorAll('nav a, ol a') : [];
-          navLabels = Array.from(as).map(a => (a.textContent||'').trim()).filter(Boolean);
+          navEntries = Array.from(as).map(a => ({label:(a.textContent||'').trim(), href:(a.getAttribute('href')||'')})).filter(e=>e.label);
         }catch(e){}
       }
     } else if(ncxItem){
@@ -516,27 +589,71 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         try{
           const xml = await f.async('string');
           const doc = new DOMParser().parseFromString(xml, 'application/xml');
-          const texts = doc.getElementsByTagName('text');
-          navLabels = Array.from(texts).map(t => (t.textContent||'').trim()).filter(Boolean);
+          const navPoints = doc.getElementsByTagName('navPoint');
+          navEntries = Array.from(navPoints).map(np=>{
+            const textEl = np.getElementsByTagName('text')[0];
+            const contentEl = np.getElementsByTagName('content')[0];
+            return { label: textEl ? textEl.textContent.trim() : '', href: contentEl ? (contentEl.getAttribute('src')||'') : '' };
+          }).filter(e=>e.label);
         }catch(e){}
       }
     }
-    stats.navLabelCount = navLabels.length;
-    const genericLabelCount = navLabels.filter(l => GENERIC_LABEL_RE.test(l.replace(/\s+/g,' '))).length;
-    const genericLabelRatio = navLabels.length ? genericLabelCount/navLabels.length : 0;
-    flag('generic_toc', '목차 항목이 대부분 일반적인 번호/챕터 표기뿐', navLabels.length>=2 && genericLabelRatio>=0.7, 14,
-      `목차 ${navLabels.length}개 중 ${genericLabelCount}개가 일반 패턴`);
-    flag('descriptive_toc', '목차 항목이 구체적인 제목으로 구성됨', navLabels.length>=2 && genericLabelRatio<0.3, -14,
-      `목차 ${navLabels.length}개 중 일반 패턴 ${genericLabelCount}개`);
+    stats.navLabelCount = navEntries.length;
+    function normName(s){ return (s||'').replace(/\.x?html?$/i,'').replace(/[^a-zA-Z0-9가-힣]/g,'').toLowerCase(); }
+    const genericLabelCount = navEntries.filter(e => {
+      const l = e.label.replace(/\s+/g,' ').trim();
+      if(GENERIC_LABEL_RE.test(l) || PURE_NUMBER_RE.test(l)) return true;
+      const fname = e.href.split('/').pop() || '';
+      if(fname && normName(l) === normName(fname)) return true;
+      return false;
+    }).length;
+    const genericLabelRatio = navEntries.length ? genericLabelCount/navEntries.length : 0;
+    flag('generic_toc', '목차 항목이 변환기 기본 라벨이거나 파일명을 그대로 사용함', navEntries.length>=3 && genericLabelRatio>=0.6, 8,
+      `목차 ${navEntries.length}개 중 ${genericLabelCount}개가 기본 패턴/파일명과 일치`);
+    flag('no_toc', '목차(TOC)가 아예 없음', navEntries.length===0 && spineHrefEntries.length>=3, 16,
+      `목차 항목 0개 (챕터 파일 ${spineHrefEntries.length}개)`);
+    flag('incomplete_toc', '목차가 있으나 전체 챕터에 비해 턱없이 부족함 (시작 지점 정도만 있음)', spineHrefEntries.length>=5 && navEntries.length>0 && navEntries.length < spineHrefEntries.length*0.5, 14,
+      `목차 ${navEntries.length}개 / 챕터 파일 ${spineHrefEntries.length}개`);
+
+    flag('chapter_heading_misplaced', '챕터 제목이 파일 맨 앞이 아니라 본문 중간에 위치함 (여러 화가 한 파일에 뭉쳐 있을 가능성)',
+      headingCheckedFiles>0 && (misplacedHeadingHits>=2 || (headingCheckedFiles>=3 && misplacedHeadingHits/headingCheckedFiles>=0.15)), 18,
+      `검사한 ${headingCheckedFiles}개 파일 중 ${misplacedHeadingHits}개에서 챕터 제목 위치 이상 발견`);
+
+    // --- 구조적 확정 규칙 ---
+    // 아래 4가지는 "원본 EPUB에서는 있을 수 없는" 구조적 패턴이라, 점수와 무관하게 텍변펍로 확정 처리한다.
+    const uniqueTocFiles = new Set(navEntries.map(e => (e.href||'').split('#')[0]).filter(Boolean)).size;
+    const hardFlags = [];
+    hardFlags.push({
+      id:'hard_no_toc', label:'회차별 목차가 아예 없음',
+      hit: navEntries.length===0 && spineHrefEntries.length>=3,
+      detail:`목차 항목 0개 (챕터로 추정되는 파일 ${spineHrefEntries.length}개)`
+    });
+    hardFlags.push({
+      id:'hard_single_file', label:'목차/챕터 분할 없이 전체 내용이 파일 1~2개에 통째로 들어있음',
+      hit: spineHrefEntries.length<=2 && totalChars>40000,
+      detail:`챕터 파일 ${spineHrefEntries.length}개, 총 텍스트 ${totalChars.toLocaleString()}자`
+    });
+    hardFlags.push({
+      id:'hard_toc_not_split', label:'목차 항목은 있으나 실제로는 소수의 파일에 앵커(#)로만 묶여 있어 화별 html이 생성되지 않음',
+      hit: navEntries.length>=3 && uniqueTocFiles < navEntries.length*0.4,
+      detail:`목차 항목 ${navEntries.length}개가 실제 파일 ${uniqueTocFiles}개에만 연결됨`
+    });
+    hardFlags.push({
+      id:'hard_heading_misplaced', label:'챕터 제목(h태그)이 파일 맨 앞이 아닌 본문 중간에 반복적으로 나타남 (여러 화 병합)',
+      hit: headingCheckedFiles>0 && (misplacedHeadingHits>=3 || (headingCheckedFiles>=3 && misplacedHeadingHits/headingCheckedFiles>=0.2)),
+      detail:`검사한 ${headingCheckedFiles}개 파일 중 ${misplacedHeadingHits}개에서 챕터 제목 위치 이상`
+    });
+    const hardHits = hardFlags.filter(f=>f.hit);
 
     score = Math.max(0, Math.min(100, score));
     let verdict;
-    if(score>=55) verdict='suspect';
+    if(score>=52) verdict='suspect';
     else if(score>=25) verdict='ambiguous';
     else verdict='original';
+    if(hardHits.length){ verdict = 'confirmed'; }
 
-    return { file, name:file.name, score, verdict, flags:flagsList, stats,
-      meta:{title:meta.title, creator:meta.creator, publisher:meta.publisher, generator:meta.generator} };
+    return { file, name:file.name, score, verdict, flags:flagsList, hardHits, stats,
+      meta:{title:meta.title, creator:meta.creator, publisher:meta.publisher, generator:meta.generatorMeta} };
   }
 
   analyzeBtn.addEventListener('click', async ()=>{
@@ -563,18 +680,23 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   });
 
   function verdictLabel(v){
+    if(v==='confirmed') return {cls:'v-bad', text:'텍변펍 확정'};
     if(v==='suspect') return {cls:'v-bad', text:'텍변펍 의심'};
     if(v==='ambiguous') return {cls:'v-warn', text:'애매함 · 확인 필요'};
     if(v==='error') return {cls:'v-warn', text:'분석 실패'};
     return {cls:'v-ok', text:'원본으로 보임'};
   }
 
+  function verdictRank(v){
+    return {confirmed:3, suspect:2, ambiguous:1, original:0, error:-1}[v] ?? 0;
+  }
+
   function renderResults(){
     resultsWrap.style.display='block';
     resultsBody.innerHTML='';
-    const sorted = [...results].sort((a,b)=> b.score - a.score);
-    const suspectCount = results.filter(r=>r.verdict==='suspect').length;
-    summaryBadge.textContent = `총 ${results.length}개 중 텍변펍 의심 ${suspectCount}건`;
+    const sorted = [...results].sort((a,b)=> (verdictRank(b.verdict)-verdictRank(a.verdict)) || (b.score - a.score));
+    const suspectCount = results.filter(r=>r.verdict==='suspect'||r.verdict==='confirmed').length;
+    summaryBadge.textContent = `총 ${results.length}개 중 텍변펍 의심/확정 ${suspectCount}건`;
 
     sorted.forEach((r, idx)=>{
       const vi = verdictLabel(r.verdict);
@@ -612,9 +734,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       wrap.innerHTML = `<div class="flag hit"><div class="dot"></div><div class="txt">${escapeHtml(r.error)}</div></div>`;
       return wrap;
     }
+    let html = '';
+    const hardHits = (r.hardHits||[]).filter(f=>f.hit);
+    if(hardHits.length){
+      html += `<div class="flag-group" style="background:var(--bad-bg); border-radius:8px; padding:10px 12px; margin-bottom:10px;">
+        <h4 style="color:var(--bad);">⚠ 구조적으로 텍변펍 확정 (점수와 무관)</h4>` +
+        hardHits.map(f=>`<div class="flag hit"><div class="dot"></div><div class="txt"><b>${escapeHtml(f.label)}</b><br><span style="color:var(--sub)">${escapeHtml(f.detail)}</span></div></div>`).join('') +
+        `</div>`;
+    }
     const hits = r.flags.filter(f=>f.hit && f.weight>0);
     const negs = r.flags.filter(f=>f.hit && f.weight<0);
-    let html = '';
     if(hits.length){
       html += `<div class="flag-group"><h4>텍변펍 의심 근거</h4>` +
         hits.map(f=>`<div class="flag hit"><div class="dot"></div><div class="txt">${escapeHtml(f.label)} <b>(+${f.weight})</b><br><span style="color:var(--sub)">${escapeHtml(f.detail)}</span></div></div>`).join('') +
