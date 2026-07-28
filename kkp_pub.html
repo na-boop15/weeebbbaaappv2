@@ -426,6 +426,29 @@ var S={
 };
 
 function extractNum(t){var m=(t||'').match(/\d+/);return m?parseInt(m[0],10):null;}
+// [추가 기능] 이미지 내용 기반 중복 제거
+// "선택 회차에 적용"으로 같은 아이콘 이미지를 수십~수백 회차에 붙이면, 기존엔 회차마다
+// 완전히 같은 바이너리를 EPUB 안에 매번 새로 저장해서 용량이 (이미지 크기 × 회차 수)로 불어났다.
+// (모바일 브라우저에서 용량이 커지면 EPUB 생성 중 메모리 부족으로 탭이 초기화될 수 있음.)
+// 내용이 완전히 같은 이미지는 파일로 한 번만 저장하고, 나머지 회차는 그 파일을 같이 참조하게 한다.
+function hashStr(s){
+  var h=0,len=s.length;
+  for(var i=0;i<len;i+=Math.max(1,(len/64)|0)){h=(h*31+s.charCodeAt(i))|0;}
+  return h+'_'+len;
+}
+function dedupeImgMap(map){
+  var buckets={},keyCanonical={},canonicalList=[];
+  Object.keys(map).forEach(function(key){
+    var d=map[key];if(!d)return;
+    var h=hashStr(d.b64);
+    var bucket=buckets[h]||(buckets[h]=[]);
+    var match=null;
+    for(var i=0;i<bucket.length;i++){if(bucket[i].data.b64===d.b64){match=bucket[i];break;}}
+    if(match){keyCanonical[key]=match.key;}
+    else{bucket.push({key:key,data:d});canonicalList.push({key:key,data:d});keyCanonical[key]=key;}
+  });
+  return{keyCanonical:keyCanonical,canonicalList:canonicalList};
+}
 function cleanWs(t){
   return t
     .replace(/[\u200B-\u200F\u202A-\u202E\u202F]/g,'')   // 폭없는 공백/조인트, 방향 제어 문자
@@ -1759,25 +1782,36 @@ async function packEpub(title,author,chapters,cssExtra,doPurge,coverData,saveFil
   }
   var imgMfItems='';
   var writtenImgKeys={};
-  Object.keys(S.imgMap).forEach(function(key){
-    var id=S.imgMap[key];
-    if(!id)return;
-    var imgPath='images/img_'+key+'.'+id.ext;
+  var imgDedup=S._imgDedup||dedupeImgMap(S.imgMap);
+  var contentIndex={}; // b64 -> 이미 저장한 canonical 키 (표지 삽입 이미지도 같은 풀에서 중복 체크)
+  imgDedup.canonicalList.forEach(function(e){
+    var id=e.data;
+    var imgPath='images/img_'+e.key+'.'+id.ext;
     var b64=id.b64.split(',')[1];
     var bin=atob(b64),bts=new Uint8Array(bin.length);
     for(var i=0;i<bin.length;i++)bts[i]=bin.charCodeAt(i);
     ob.file(imgPath,bts,{binary:true});
-    imgMfItems+='    <item id="img_'+key+'" href="'+imgPath+'" media-type="'+id.mt+'"/>\n';
-    writtenImgKeys[key]=true;
+    imgMfItems+='    <item id="img_'+e.key+'" href="'+imgPath+'" media-type="'+id.mt+'"/>\n';
+    writtenImgKeys[e.key]=true;
+    contentIndex[id.b64]=e.key;
   });
   chapters.forEach(function(ch){
-    if(ch.imgData&&!writtenImgKeys[ch.imgIdx]){
+    if(!ch.imgData)return;
+    var ck=contentIndex[ch.imgData.b64];
+    if(ck&&ck!==ch.imgIdx){
+      // 이미 저장된 이미지와 내용이 완전히 같음 — 새로 저장하지 않고 기존 파일을 같이 참조
+      ch.content=ch.content.split('img_'+ch.imgIdx+'.').join('img_'+ck+'.');
+      ch.imgIdx=ck;
+    }
+    if(!writtenImgKeys[ch.imgIdx]){
       var imgPath='images/img_'+ch.imgIdx+'.'+ch.imgData.ext;
       var b64=ch.imgData.b64.split(',')[1];
       var bin=atob(b64),bts=new Uint8Array(bin.length);
       for(var i=0;i<bin.length;i++)bts[i]=bin.charCodeAt(i);
       ob.file(imgPath,bts,{binary:true});
       imgMfItems+='    <item id="img_'+ch.imgIdx+'" href="'+imgPath+'" media-type="'+ch.imgData.mt+'"/>\n';
+      writtenImgKeys[ch.imgIdx]=true;
+      contentIndex[ch.imgData.b64]=ch.imgIdx;
     }
   });
   chapters.forEach(function(ch){ob.file(ch.file,mkXhtml(ch.title,ch.content));});
@@ -1951,6 +1985,7 @@ function dedupeAndSortSegments(segments,log){
 function makeChapters(files,opts){
   var titleOwnPageEl=document.getElementById('chk-title-own-page');
   var titlePageToggle=titleOwnPageEl?titleOwnPageEl.checked:false;
+  S._imgDedup=dedupeImgMap(S.imgMap);
   var result=[];
   files.forEach(function(f,i){
     var raw=f.text||'';
@@ -1977,7 +2012,8 @@ function makeChapters(files,opts){
         var key=i+'_'+imgPos;
         var id=S.imgMap[key];
         if(id){
-          img.setAttribute('src','images/img_'+key+'.'+id.ext);
+          var ck=(S._imgDedup&&S._imgDedup.keyCanonical[key])||key;
+          img.setAttribute('src','images/img_'+ck+'.'+id.ext);
           img.removeAttribute('data-src');
           anyChanged=true;
         }
