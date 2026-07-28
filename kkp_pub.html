@@ -842,6 +842,7 @@ function renderToc(){
   var mcInfo=detectMissingChapters(S.files.map(function(f){return f.name.replace(/\.\w+$/,'');}));
   var missing=mcInfo.missing;
   var dupSet={};Object.keys(numMap).forEach(function(n){if(numMap[n].length>1)dupSet[n]=true;});
+  var allDedupLog=[]; // 파일 내부(회차 분리) 중복 제거 기록 — 하단에 요약 표시
 
   // 표지/판권 감지 (미리 체크해서 배지 표시용)
   var firstCoverFound=false;
@@ -852,6 +853,7 @@ function renderToc(){
     var pageType=isHtmlFile?detectPageType(f.text):null;
 
     var titlePageToggleEl=document.getElementById('chk-title-own-page');
+    var fileDedupLog=[];
     var segs=isHtmlFile?(function(){
       var t=document.createElement('div');t.innerHTML=f.text;
       t.querySelectorAll('style,script,title,meta,head,link').forEach(function(el){el.remove();});
@@ -859,8 +861,9 @@ function renderToc(){
       while(t.children.length===1&&t.children[0].tagName==='DIV'&&t.children[0].children.length>1&&guard<5){
         t.innerHTML=t.children[0].innerHTML;guard++;
       }
-      return dedupeAndSortSegments(buildSegments(t,titlePageToggleEl?titlePageToggleEl.checked:false,stem));
+      return dedupeAndSortSegments(buildSegments(t,titlePageToggleEl?titlePageToggleEl.checked:false,stem),fileDedupLog);
     })():[];
+    if(fileDedupLog.length)allDedupLog.push({file:f.name,entries:fileDedupLog});
     var displayTitle;
     if(S.tocOverrides[i]!==undefined){
       displayTitle=S.tocOverrides[i];
@@ -928,6 +931,7 @@ function renderToc(){
 
     // 계층 목차: 실제 분리될 파일이 2개 이상일 때만 하위 목차로 펼쳐 보여줌
     if(isHtmlFile&&pageType===null&&segs.length>=2){
+      var dedupNums={};fileDedupLog.forEach(function(e){dedupNums[e.num]=e;});
       segs.forEach(function(seg){
         var subRow=document.createElement('div');
         subRow.className='toc-sub-row';
@@ -937,6 +941,14 @@ function renderToc(){
         txt.style.cssText='font-size:11px;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;';
         txt.textContent=seg.title;
         subRow.appendChild(arrow);subRow.appendChild(txt);
+        var dEntry=dedupNums[extractNum(seg.title)];
+        if(dEntry){
+          var dbadge=document.createElement('span');
+          dbadge.style.cssText='font-size:9px;color:var(--wn);background:#fff8e6;border:1px solid #f0d78c;padding:0 5px;border-radius:4px;flex-shrink:0;';
+          dbadge.textContent='중복 '+dEntry.count+'→1';
+          dbadge.title='원본에 이 회차가 '+dEntry.count+'번 반복 저장되어 있었음. 그중 가장 긴 버전('+dEntry.keptLen+'자)만 남김. 발견된 길이: '+dEntry.allLens.join(', ')+'자 — 길이 차이가 크면 내용이 잘렸을 수 있으니 원본을 다시 확인해보세요.';
+          subRow.appendChild(dbadge);
+        }
         wrap.appendChild(subRow);
       });
     }
@@ -947,6 +959,19 @@ function renderToc(){
     mi.style.cssText='padding:5px 10px;font-family:\'DM Mono\',monospace;font-size:10px;color:var(--er);background:#fff5f5;border:1px solid #fcc;border-radius:6px;margin-top:2px;';
     mi.textContent='⚠ 누락: '+missing.join(', ')+(mcInfo.unit||'화');
     wrap.appendChild(mi);
+  }
+  if(allDedupLog.length){
+    var di=document.createElement('div');
+    di.style.cssText='padding:6px 10px;font-family:\'DM Mono\',monospace;font-size:10px;color:#8a6d00;background:#fff8e6;border:1px solid #f0d78c;border-radius:6px;margin-top:2px;line-height:1.6;';
+    var totalCh=allDedupLog.reduce(function(s,f){return s+f.entries.length;},0);
+    var parts=['⚠ 중복 회차 '+totalCh+'건 자동 정리됨 (가장 긴 버전만 유지):'];
+    allDedupLog.forEach(function(fe){
+      var chList=fe.entries.map(function(e){return e.num+'화('+e.count+'→1, '+e.allLens.join('/')+'자)';}).join(', ');
+      parts.push('· '+fe.file+' — '+chList);
+    });
+    di.textContent=parts.join('\n');
+    di.style.whiteSpace='pre-line';
+    wrap.appendChild(di);
   }
   if(document.getElementById('chk-cover-insert-enable').checked)populateCoverInsertSelect();
 }
@@ -995,7 +1020,9 @@ function renderImgPanel(){
     var pos=0;
     hits.forEach(function(hit){
       var key=i+'_'+pos;
-      if(!hit.looksCover&&!hit.looksLikeIcon)items.push({key:key,fileIdx:i,name:f.name.replace(/\.\w+$/,''),hitIndex:hit.index,hitLen:hit.len});
+      // looksLikeIcon(작은 크기/회차 헤딩 바로 위)이어도 여기선 숨기지 않는다 — 회차 아이콘을 바로 이 패널에서 첨부/교체하기 때문.
+      // 대신 precedesHeading이면 "회차 아이콘 추정" 배지를 달아 일반 삽화와 구분되게 표시.
+      if(!hit.looksCover)items.push({key:key,fileIdx:i,name:f.name.replace(/\.\w+$/,''),hitIndex:hit.index,hitLen:hit.len,precedesHeading:hit.precedesHeading});
       pos++;
     });
   });
@@ -1023,6 +1050,13 @@ function renderImgPanel(){
     label.textContent=item.name;
     if(imgData)label.style.color='var(--ok)';
     row.appendChild(label);
+    if(item.precedesHeading){
+      var iconBadge=document.createElement('span');
+      iconBadge.style.cssText='font-size:9px;color:var(--ac);background:var(--acl);border-radius:4px;padding:1px 5px;flex-shrink:0;';
+      iconBadge.textContent='회차 아이콘 추정';
+      iconBadge.title='이 이미지 바로 뒤에 회차 제목(헤딩)이 붙어 있어 회차 위 아이콘일 가능성이 높습니다';
+      row.appendChild(iconBadge);
+    }
     if(imgData){
       var nm=document.createElement('span');
       nm.style.cssText='font-size:10px;color:var(--mu);font-family:\'DM Mono\',monospace;flex-shrink:0;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
@@ -1163,8 +1197,8 @@ function detectInlineCopyrightBlocks(text){
   }
   return out;
 }
-function openCoverCleanPanel(){
-  if(!S.files.length){toast('파일이 없습니다','err');return;}
+function openCoverCleanPanel(silent){
+  if(!S.files.length){if(!silent)toast('파일이 없습니다','err');return;}
   var items=[];
   S.files.forEach(function(f,i){
     if(!f.text||!f.text.trim().startsWith('<'))return;
@@ -1184,7 +1218,7 @@ function openCoverCleanPanel(){
   });
   var panel=document.getElementById('cover-clean-panel');
   var list=document.getElementById('cover-clean-list');
-  if(!items.length){toast('감지된 표지·판권·삽화 항목이 없습니다','ok');panel.style.display='none';return;}
+  if(!items.length){if(!silent)toast('감지된 표지·판권·삽화 항목이 없습니다','ok');panel.style.display='none';return;}
   S.coverCleanItems=items;
   document.getElementById('cover-clean-select-all').checked=false;
   list.innerHTML='';
@@ -1254,8 +1288,9 @@ function deleteCheckedCoverCleanItems(){
     S.tocOverrides=newToc;
     S.files.splice(idx,1);
   });
-  document.getElementById('cover-clean-panel').style.display='none';
+  document.getElementById('cover-clean-select-all').checked=false;
   renderList();renderToc();renderImgPanel();applyAutoCompletion();
+  openCoverCleanPanel(true); // 남은 표지/판권 항목이 있으면 패널을 갱신해서 계속 보여주고, 없으면 자동으로 숨겨짐
   toast(checkedRows.length+'개 항목 정리됨','ok');
 }
 
@@ -1887,12 +1922,13 @@ function buildSegments(tmpC,titlePageToggle,fallbackTitle){
 // (1) 같은 번호가 여러 번 나오면 본문이 가장 긴(가장 완전한) 것만 남기고,
 // (2) 모든 세그먼트에 번호가 있으면 번호 순으로 재정렬한다.
 // 번호를 못 찾는 세그먼트(프롤로그 등)가 하나라도 있으면 순서는 원본 그대로 둔다 — 잘못 재배치될 위험 방지.
-function dedupeAndSortSegments(segments){
+function dedupeAndSortSegments(segments,log){
   if(segments.length<=1)return segments;
-  var seen={},order=[],allNumbered=true;
+  var seen={},order=[],allNumbered=true,groups={};
   segments.forEach(function(seg){
     var n=extractNum(seg.title);
     if(n===null){allNumbered=false;order.push(seg);return;}
+    (groups[n]=groups[n]||[]).push((seg.html||'').length);
     if(!(n in seen)){seen[n]=seg;order.push(seg);}
     else if((seg.html||'').length>(seen[n].html||'').length){
       // 더 길고 완전한 버전으로 교체 (order 배열 속 자리도 함께 갱신)
@@ -1900,6 +1936,13 @@ function dedupeAndSortSegments(segments){
       seen[n]=seg;
     }
   });
+  // 중복이 있었던 회차 기록 — 어떤 게 지워졌는지 나중에 화면에 보여주기 위함
+  // (길이가 서로 다르면 캡처가 잘렸을 가능성이 있으니 사용자가 직접 확인하도록)
+  if(log){
+    Object.keys(groups).forEach(function(n){
+      if(groups[n].length>1)log.push({num:n,title:seen[n].title,count:groups[n].length,keptLen:(seen[n].html||'').length,allLens:groups[n]});
+    });
+  }
   if(allNumbered){
     order.sort(function(a,b){return extractNum(a.title)-extractNum(b.title);});
   }
