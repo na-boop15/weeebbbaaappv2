@@ -375,6 +375,7 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
           <label for="ckBody">직접 수정하기</label>
           <span class="ep-default-badge" id="bodyDefaultBadge">미체크 = 원본 값 유지</span>
         </div>
+        <div id="detectedCssInfo" style="display:none;font-size:10.5px;line-height:1.5;margin-top:6px;color:var(--mu);"></div>
         <div id="bodyControls" style="display:none;flex-direction:column;gap:9px;margin-top:6px;">
           <div class="ep-row">
             <span class="ep-lbl">좌우 마진</span>
@@ -1457,6 +1458,100 @@ function switchTab(t){
 ════════════════════════════ */
 var epubZip=null,epubFilename='';
 
+/* 실제 챕터 xhtml이 <link>로 참조하는 CSS를 찾는다.
+   (style.css/stylesheet.css라는 이름이 아니어도, 예: css/ui.css 등도 찾아낸다) */
+async function findCssInZip(zip){
+  var cssPath=null,sampleHtmlPath=null;
+  zip.forEach(function(p){
+    if(!sampleHtmlPath&&/\.(xhtml|html|htm)$/i.test(p)&&!/cover|title|nav/i.test(p))sampleHtmlPath=p;
+  });
+  var sampleHtml='';
+  if(sampleHtmlPath){
+    sampleHtml=await zip.file(sampleHtmlPath).async('string');
+    var linkM=sampleHtml.match(/<link[^>]+href=["']([^"']+\.css)["']/i);
+    if(linkM){
+      var baseDir=sampleHtmlPath.substring(0,sampleHtmlPath.lastIndexOf('/')+1);
+      try{
+        var resolved=new URL(linkM[1],'https://x/'+baseDir).pathname.replace(/^\//,'');
+        if(zip.file(resolved))cssPath=resolved;
+      }catch(e){}
+    }
+  }
+  if(!cssPath){
+    zip.forEach(function(rp){if(/\.css$/i.test(rp)&&!cssPath)cssPath=rp;});
+  }
+  var css='';
+  if(cssPath)css=await zip.file(cssPath).async('string');
+  return {cssPath:cssPath,css:css,sampleHtmlPath:sampleHtmlPath,sampleHtml:sampleHtml};
+}
+
+/* css 텍스트에서 body의 line-height/좌우마진, p의 위/아래 마진(em 단위)을 감지 */
+function detectBodyCssValues(css){
+  var out={lineHeight:null,bodyMargin:null,pMarginTop:null,pMarginBottom:null};
+  if(!css)return out;
+  var bodyM=css.match(/(^|[^.\w-])body(?![.\w-])\s*\{([^}]*)\}/i);
+  if(bodyM){
+    var bblock=bodyM[2];
+    var lhM=bblock.match(/line-height\s*:\s*([\d.]+)/i);
+    if(lhM)out.lineHeight=parseFloat(lhM[1]);
+    /* margin: T R B L 형태(마지막 선언이 우선) 또는 margin-left/right */
+    var mAll=bblock.match(/(?:^|;)\s*margin\s*:\s*([^;]+)/gi);
+    if(mAll&&mAll.length){
+      var last=mAll[mAll.length-1].split(':')[1].trim();
+      var parts=last.split(/\s+/);
+      var em=parts.find(function(v){return /em$/i.test(v);});
+      if(em)out.bodyMargin=parseFloat(em);
+      else if(parts.length>=2)out.bodyMargin=parseFloat(parts[1])||null;
+    }
+    var mlM=bblock.match(/margin-left\s*:\s*([\d.]+)em/i);
+    if(mlM)out.bodyMargin=parseFloat(mlM[1]);
+  }
+  var pM=css.match(/(^|[^.\w-])p(?![.\w-])\s*\{([^}]*)\}/i);
+  if(pM){
+    var pblock=pM[2];
+    var mAll2=pblock.match(/(?:^|;)\s*margin\s*:\s*([^;]+)/gi);
+    if(mAll2&&mAll2.length){
+      var last2=mAll2[mAll2.length-1].split(':')[1].trim();
+      var parts2=last2.split(/\s+/).map(function(v){return parseFloat(v)||0;});
+      /* 1값: 상하좌우 동일 / 2값: 상하,좌우 / 3값: 상,좌우,하 / 4값: 상,우,하,좌 */
+      if(parts2.length===1){out.pMarginTop=parts2[0];out.pMarginBottom=parts2[0];}
+      else if(parts2.length===2){out.pMarginTop=parts2[0];out.pMarginBottom=parts2[0];}
+      else if(parts2.length===3){out.pMarginTop=parts2[0];out.pMarginBottom=parts2[2];}
+      else if(parts2.length>=4){out.pMarginTop=parts2[0];out.pMarginBottom=parts2[2];}
+    }
+    var mtM=pblock.match(/margin-top\s*:\s*([\d.]+)em/i);
+    if(mtM)out.pMarginTop=parseFloat(mtM[1]);
+    var mbM=pblock.match(/margin-bottom\s*:\s*([\d.]+)em/i);
+    if(mbM)out.pMarginBottom=parseFloat(mbM[1]);
+  }
+  return out;
+}
+
+function applyDetectedCssValues(det){
+  var box=document.getElementById('detectedCssInfo');
+  if(!box)return;
+  var lh=det.lineHeight!=null?det.lineHeight:1.75;
+  var bm=det.bodyMargin!=null?det.bodyMargin:0;
+  var pt=det.pMarginTop!=null?det.pMarginTop:0.6;
+  var pb=det.pMarginBottom!=null?det.pMarginBottom:1.4;
+  var sum=pt+pb;
+  ['epLineHeight','epLineHeightNum'].forEach(function(id){document.getElementById(id).value=lh;});
+  ['epBodyMargin','epBodyMarginNum'].forEach(function(id){document.getElementById(id).value=bm;});
+  ['epPMarginT','epPMarginTNum'].forEach(function(id){document.getElementById(id).value=pt;});
+  ['epPMarginB','epPMarginBNum'].forEach(function(id){document.getElementById(id).value=pb;});
+  document.getElementById('lblEpLineHeight').textContent=lh.toFixed(2);
+  document.getElementById('lblEpBodyMargin').textContent=bm.toFixed(1)+'em';
+  document.getElementById('lblEpPMarginT').textContent=pt.toFixed(1)+'em';
+  document.getElementById('lblEpPMarginB').textContent=pb.toFixed(1)+'em';
+  updateEpBodyPreview();
+  var warn=sum>=2;
+  box.style.display='block';
+  box.style.color=warn?'#c0392b':'var(--mu)';
+  box.innerHTML='📎 원본에서 감지된 값 — 줄높이 '+lh.toFixed(2)+' · 좌우여백 '+bm.toFixed(1)+'em · 문단 위/아래 '
+    +pt.toFixed(1)+'em / '+pb.toFixed(1)+'em <b>(합계 '+sum.toFixed(1)+'em)</b>'
+    +(warn?' — 이미 넓은 편이니 추가로 늘리지 않는 걸 추천해요.':'');
+}
+
 (function(){
   var zone=document.getElementById('epubDropZone');
   if(!zone)return;
@@ -1491,6 +1586,11 @@ document.getElementById('fileEpub').addEventListener('change',async function(){
       var noIndent=await detectNoIndent(epubZip);
       indentBox.style.display=noIndent?'block':'none';
     }
+    try{
+      var cssInfo=await findCssInZip(epubZip);
+      var det=detectBodyCssValues(cssInfo.css);
+      applyDetectedCssValues(det);
+    }catch(ex){}
   }catch(e){toast('EPUB 읽기 실패: '+e.message,'err');}
 });
 
@@ -1788,28 +1888,11 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
     epProg(45,'원본 CSS 읽기...');
     /* CSS 파일 탐색 — 실제 챕터 xhtml이 <link>로 참조하는 CSS를 찾는다.
        (style.css/stylesheet.css라는 이름이 아니어도, 예: css/ui.css 등도 찾아낸다) */
-    var cssPath=null;
-    var sampleHtmlPath=null;
-    workZip.forEach(function(p){
-      if(!sampleHtmlPath&&/\.(xhtml|html|htm)$/i.test(p)&&!/cover|title|nav/i.test(p))sampleHtmlPath=p;
-    });
-    if(sampleHtmlPath){
-      var sampleHtml=await workZip.file(sampleHtmlPath).async('string');
-      var linkM=sampleHtml.match(/<link[^>]+href=["']([^"']+\.css)["']/i);
-      if(linkM){
-        var baseDir=sampleHtmlPath.substring(0,sampleHtmlPath.lastIndexOf('/')+1);
-        try{
-          var resolved=new URL(linkM[1],'https://x/'+baseDir).pathname.replace(/^\//,'');
-          if(workZip.file(resolved))cssPath=resolved;
-        }catch(e){}
-      }
-    }
-    if(!cssPath){
-      /* 위에서 못 찾은 경우를 위한 보완 — zip 안의 .css 파일을 아무거나 탐색 */
-      workZip.forEach(function(rp){if(/\.css$/i.test(rp)&&!cssPath)cssPath=rp;});
-    }
-    var css='';
-    if(cssPath)css=await workZip.file(cssPath).async('string');
+    var cssInfoSave=await findCssInZip(workZip);
+    var cssPath=cssInfoSave.cssPath;
+    var sampleHtmlPath=cssInfoSave.sampleHtmlPath;
+    var sampleHtml=cssInfoSave.sampleHtml;
+    var css=cssInfoSave.css;
 
     epProg(58,'CSS 병합...');
     var patched=css;

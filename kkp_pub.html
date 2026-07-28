@@ -189,8 +189,13 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
       </div>
 
       <div class="card" id="cover-clean-panel" style="display:none;">
-        <div class="card-hd" style="margin-bottom:10px;">
+        <div class="card-hd" style="margin-bottom:10px;flex-wrap:wrap;row-gap:8px;">
           <span class="snum">🧹</span> 표지·판권 정리 검토
+          <span style="display:flex;align-items:center;gap:5px;">
+            <button class="btn btn-ghost btn-sm" id="ccf-btn-cover" onclick="filterCoverCleanList('cover')">표지</button>
+            <button class="btn btn-ghost btn-sm" id="ccf-btn-copyright" onclick="filterCoverCleanList('copyright')">판권</button>
+            <button class="btn btn-ghost btn-sm" id="ccf-btn-all" onclick="filterCoverCleanList('all')">필터 해제</button>
+          </span>
           <span style="margin-left:auto;display:flex;align-items:center;gap:8px;">
             <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--mu);cursor:pointer;font-family:'DM Mono',monospace;">
               <input type="checkbox" id="cover-clean-select-all" checked onchange="document.querySelectorAll('.cover-clean-chk').forEach(function(c){c.checked=this.checked;}.bind(this))"/>
@@ -854,7 +859,7 @@ function renderToc(){
       while(t.children.length===1&&t.children[0].tagName==='DIV'&&t.children[0].children.length>1&&guard<5){
         t.innerHTML=t.children[0].innerHTML;guard++;
       }
-      return buildSegments(t,titlePageToggleEl?titlePageToggleEl.checked:false,stem);
+      return dedupeAndSortSegments(buildSegments(t,titlePageToggleEl?titlePageToggleEl.checked:false,stem));
     })():[];
     var displayTitle;
     if(S.tocOverrides[i]!==undefined){
@@ -1105,9 +1110,19 @@ function detectInlineCoverImgs(text){
     var hMatch=tag.match(/data-height\s*=\s*["'](\d+(?:\.\d+)?)/i);
     var w=wMatch?parseFloat(wMatch[1]):null;
     var h=hMatch?parseFloat(hMatch[1]):null;
-    var looksLikeIcon=(w!==null&&w<150)||(h!==null&&h<150);
+    var sizeSaysIcon=(w!==null&&w<150)||(h!==null&&h<150);
+    // 회차 아이콘 판별: 이미지 뒤 400자 이내에 눈에 띄는 텍스트 없이 h1~h4 헤딩이 나오면
+    // "회차 제목 바로 위에 붙는 아이콘"으로 간주 (본문 삽화와 구분)
+    var afterText=text.slice(m.index+tag.length,m.index+tag.length+400);
+    var headingMatch=afterText.match(/<h[1-4][^>]*>/i);
+    var precedesHeading=false;
+    if(headingMatch){
+      var between=afterText.slice(0,headingMatch.index).replace(/<[^>]+>/g,'').trim();
+      if(between.length<20)precedesHeading=true;
+    }
+    var looksLikeIcon=sizeSaysIcon||precedesHeading;
     var isCover=strongMarker&&!looksLikeIcon;
-    out.push({index:m.index,len:tag.length,tag:tag,looksCover:isCover,looksLikeIcon:looksLikeIcon});
+    out.push({index:m.index,len:tag.length,tag:tag,looksCover:isCover,looksLikeIcon:looksLikeIcon,precedesHeading:precedesHeading});
   }
   return out;
 }
@@ -1159,9 +1174,9 @@ function openCoverCleanPanel(){
     else{
       var inline=detectInlineCoverImgs(f.text);
       inline.forEach(function(hit){
-        if(hit.looksLikeIcon)return; // 아이콘 크기의 작은 이미지는 표지·삽화 정리 대상에서 제외
+        if(hit.looksLikeIcon)return; // 아이콘 크기의 작은 이미지는 표지·판권 정리 대상에서 제외
+        // 이 패널은 표지·판권 전용 — 일반 삽화(illustration-inline)는 여기 담지 않는다 (삽화 연결 패널에서 별도 관리)
         if(hit.looksCover)items.push({idx:i,type:'cover-inline',name:f.name,label:'본문 내 표지 이미지',index:hit.index,len:hit.len,tag:hit.tag});
-        else items.push({idx:i,type:'illustration-inline',name:f.name,label:'삽화 이미지',index:hit.index,len:hit.len,tag:hit.tag});
       });
       var copyInline=detectInlineCopyrightBlocks(f.text);
       copyInline.forEach(function(hit){items.push({idx:i,type:'copyright-inline',name:f.name,label:'본문 내 판권 정보',index:hit.index,len:hit.len,tag:hit.tag});});
@@ -1176,12 +1191,12 @@ function openCoverCleanPanel(){
   items.forEach(function(item,rowIdx){
     var row=document.createElement('div');
     row.style.cssText='display:flex;align-items:center;gap:10px;padding:7px 9px;background:var(--s2);border:1px solid var(--bd);border-radius:8px;';
+    row.dataset.group=/^cover-/.test(item.type)?'cover':(/^copyright-/.test(item.type)?'copyright':'other');
     var chkWrap=document.createElement('label');
     chkWrap.style.cssText='display:flex;align-items:center;cursor:pointer;flex-shrink:0;';
     var chk=document.createElement('input');
     chk.type='checkbox';chk.className='cover-clean-chk';
-    // 표지/판권으로 확실히 감지된 항목만 기본 체크(삭제 예정), 일반 삽화는 실수 삭제 방지를 위해 기본 미체크
-    chk.checked=(item.type!=='illustration-inline');
+    chk.checked=true; // 이 패널엔 이제 표지·판권 항목만 들어오므로 기본 전체 체크
     chk.dataset.rowIdx=rowIdx;
     chk.style.cssText='width:14px;height:14px;cursor:pointer;accent-color:var(--ac);';
     chkWrap.appendChild(chk);row.appendChild(chkWrap);
@@ -1196,7 +1211,20 @@ function openCoverCleanPanel(){
     list.appendChild(row);
   });
   panel.style.display='block';
+  filterCoverCleanList('all');
   panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+// 표지/판권/필터 해제 버튼 — 목록을 그룹별로 보여주거나 숨긴다 (체크 상태는 건드리지 않음)
+function filterCoverCleanList(group){
+  document.querySelectorAll('#cover-clean-list>div').forEach(function(row){
+    row.style.display=(group==='all'||row.dataset.group===group)?'flex':'none';
+  });
+  ['cover','copyright','all'].forEach(function(g){
+    var btn=document.getElementById('ccf-btn-'+g);
+    if(!btn)return;
+    if(g===group){btn.style.background='var(--acl)';btn.style.borderColor='var(--ac)';btn.style.color='var(--ac)';}
+    else{btn.style.background='transparent';btn.style.borderColor='var(--bd)';btn.style.color='var(--mu)';}
+  });
 }
 function deleteCheckedCoverCleanItems(){
   var items=S.coverCleanItems||[];
@@ -1852,6 +1880,31 @@ function buildSegments(tmpC,titlePageToggle,fallbackTitle){
   }
   return segments;
 }
+// [추가 기능] 세그먼트 중복 제거 + 회차 번호 정렬
+// 카카오페이지 원본을 캡처/저장하는 과정에서 같은 회차 블록이 2~3번 통째로
+// 이어붙거나, 회차 순서가 뒤섞여 저장되는 경우가 있다(예: 19화가 3번 반복,
+// 35화가 16화보다 앞에 옴). 세그먼트 제목에서 회차 번호를 추출해
+// (1) 같은 번호가 여러 번 나오면 본문이 가장 긴(가장 완전한) 것만 남기고,
+// (2) 모든 세그먼트에 번호가 있으면 번호 순으로 재정렬한다.
+// 번호를 못 찾는 세그먼트(프롤로그 등)가 하나라도 있으면 순서는 원본 그대로 둔다 — 잘못 재배치될 위험 방지.
+function dedupeAndSortSegments(segments){
+  if(segments.length<=1)return segments;
+  var seen={},order=[],allNumbered=true;
+  segments.forEach(function(seg){
+    var n=extractNum(seg.title);
+    if(n===null){allNumbered=false;order.push(seg);return;}
+    if(!(n in seen)){seen[n]=seg;order.push(seg);}
+    else if((seg.html||'').length>(seen[n].html||'').length){
+      // 더 길고 완전한 버전으로 교체 (order 배열 속 자리도 함께 갱신)
+      var idx=order.indexOf(seen[n]);if(idx>=0)order[idx]=seg;
+      seen[n]=seg;
+    }
+  });
+  if(allNumbered){
+    order.sort(function(a,b){return extractNum(a.title)-extractNum(b.title);});
+  }
+  return order;
+}
 function makeChapters(files,opts){
   var titleOwnPageEl=document.getElementById('chk-title-own-page');
   var titlePageToggle=titleOwnPageEl?titleOwnPageEl.checked:false;
@@ -1910,6 +1963,7 @@ function makeChapters(files,opts){
     }
 
     var segments=buildSegments(tmpC,titlePageToggle,stem);
+    segments=dedupeAndSortSegments(segments);
     if(segments.length<=1){
       var singleTitle=(segments.length===1&&segments[0].title)?segments[0].title:stem;
       var singleHtml=segments.length===1?segments[0].html:tmpC.innerHTML;
