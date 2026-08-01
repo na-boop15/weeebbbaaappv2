@@ -665,7 +665,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const fpMatchCount = [fpCssPath, fpChapterFilename, fpSceneBreakClass, fpChapterTitleClass].filter(Boolean).length;
     hardFlags.push({
       id:'hard_known_tool_fingerprint', label:'특정 제작 도구(EPUB Studio/로또키형)의 산출물 패턴과 일치',
-      hit: fpMatchCount>=3,
+      hit: fpMatchCount>=2,
       detail:`일치 지표 ${fpMatchCount}/4 — CSS경로(Styles/style.css): ${fpCssPath?'○':'×'}, 챕터파일명(chN.xhtml): ${fpChapterFilename?'○':'×'}, scene-break 클래스: ${fpSceneBreakClass?'○':'×'}, chapter-title 클래스: ${fpChapterTitleClass?'○':'×'}`
     });
 
@@ -675,7 +675,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const fpMatchCount2 = [fpCssStyle0001, fpSectionFilename, fpSectionChapterId, fpSystemLineClass || fpSoftSpaceOrQuote].filter(Boolean).length;
     hardFlags.push({
       id:'hard_known_tool_fingerprint2', label:'특정 제작 도구(TXT→EPUB Studio, ebooklib 기반)의 산출물 패턴과 일치',
-      hit: fpMatchCount2>=3,
+      hit: fpMatchCount2>=2,
       detail:`일치 지표 ${fpMatchCount2}/4 — CSS경로(Styles/Style0001.css): ${fpCssStyle0001?'○':'×'}, 챕터파일명(SectionNNNN.xhtml): ${fpSectionFilename?'○':'×'}, section id="chapter-...": ${fpSectionChapterId?'○':'×'}, system-line/soft-space/soft-quote 클래스: ${(fpSystemLineClass||fpSoftSpaceOrQuote)?'○':'×'}`
     });
 
