@@ -174,6 +174,7 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
 <div class="card">
   <div class="card-hd"><span class="snum">2</span>챕터 편집</div>
   <div class="ch-meta" id="chMeta"><b>0</b>개 챕터 · <b>0</b>개 포함</div>
+  <div id="metaMatterBox" style="display:none;flex-direction:column;gap:8px;margin-bottom:10px;"></div>
   <div class="ch-toolbar">
     <button class="btn btn-sm" id="btnAll">전체 포함</button>
     <button class="btn btn-sm" id="btnNone">전체 제외</button>
@@ -267,19 +268,19 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
     </div>
     <hr class="div">
     <div class="slider-row">
-      <div class="tog-info"><div class="tl">챕터 제목 위 여백</div><div class="td">margin-top: <b id="lblMT">3</b>em</div></div>
-      <input type="range" id="slMT" min="0" max="10" step="0.5" value="3" class="rng">
-      <input type="number" id="slMTNum" min="0" max="10" step="0.5" value="3" class="num-input">
+      <div class="tog-info"><div class="tl">챕터 제목 위 여백</div><div class="td">margin-top: <b id="lblMT">1.5</b>em</div></div>
+      <input type="range" id="slMT" min="0" max="10" step="0.5" value="1.5" class="rng">
+      <input type="number" id="slMTNum" min="0" max="10" step="0.5" value="1.5" class="num-input">
     </div>
     <div class="slider-row">
-      <div class="tog-info"><div class="tl">챕터 제목 아래 여백</div><div class="td">margin-bottom: <b id="lblMB">3</b>em</div></div>
-      <input type="range" id="slMB" min="0" max="10" step="0.5" value="3" class="rng">
-      <input type="number" id="slMBNum" min="0" max="10" step="0.5" value="3" class="num-input">
+      <div class="tog-info"><div class="tl">챕터 제목 아래 여백</div><div class="td">margin-bottom: <b id="lblMB">6</b>em</div></div>
+      <input type="range" id="slMB" min="0" max="10" step="0.5" value="6" class="rng">
+      <input type="number" id="slMBNum" min="0" max="10" step="0.5" value="6" class="num-input">
     </div>
     <div class="slider-row">
-      <div class="tog-info"><div class="tl">챕터 제목 폰트 크기</div><div class="td">font-size: <b id="lblFS">1.15</b>em</div></div>
-      <input type="range" id="slFS" min="0.8" max="2.0" step="0.05" value="1.15" class="rng">
-      <input type="number" id="slFSNum" min="0.8" max="2.0" step="0.05" value="1.15" class="num-input">
+      <div class="tog-info"><div class="tl">챕터 제목 폰트 크기</div><div class="td">font-size: <b id="lblFS">1.1</b>em</div></div>
+      <input type="range" id="slFS" min="0.8" max="2.0" step="0.05" value="1.1" class="rng">
+      <input type="number" id="slFSNum" min="0.8" max="2.0" step="0.05" value="1.1" class="num-input">
     </div>
   </div>
 </div>
@@ -659,7 +660,7 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
 <script>
 'use strict';
 var rawCh=[],chOrd=[],excl=new Set(),coverData=null,dragSrc=null;
-var CH_RE=/^(프롤로그[^\n]*|에필로그[^\n]*|후일담[^\n]*|[<\[(「【]?\s*제?\s*0*\d{1,4}\s*[화장][>\])」】]?(?=[\s\.\,\!\?\:\;\-\~\(\[\n]|$)[^\n]*|EP\.?\s*0*\d+[^\n]*|Episode\s+0*\d+[^\n]*|#\d+[^\n]*|특별외전[^\n]*|외전\s*\d*[^\n]*|외전$|번외\s*\d*\s*(?:\(\s*\d+\s*\))?[^\n]*)/igm;
+var CH_RE=/^[ \t]*(프롤로그[^\n]*|에필로그[^\n]*|후일담[^\n]*|[<\[(「【]?\s*제?\s*0*\d{1,4}\s*[화장][>\])」】]?(?=[\s\.\,\!\?\:\;\-\~\(\[\n]|$)[^\n]*|EP\.?\s*0*\d+[^\n]*|Episode\s+0*\d+[^\n]*|#\d+[^\n]*|0*\d{1,4}\s*[.\)]\s*(?:번외|외전|특별외전)\d*[^\n]*|특별외전[^\n]*|외전\s*\d*[^\n]*|외전$|번외\s*\d*\s*(?:\(\s*\d+\s*\))?[^\n]*)/igm;
 var SCENE_RE=/^\s*(\*+\s*){3,}\s*$/;
 
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -758,6 +759,51 @@ function applyAutoTitleAuthor(filename){
   if(titleEl.dataset.userEdited!=='1'&&r.title)titleEl.value=r.title;
   if(authorEl.dataset.userEdited!=='1'&&r.author)authorEl.value=r.author;
   updateFilenamePreview();
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 본문 앞/뒤에 섞인 작가·제목·역자 등 메타정보 감지
+// ══════════════════════════════════════════════════════════════
+var BACK_META_RE=/(?:^|\n)[ \t]*(?:원제|저자|역자|번역|출판사|정가|ISBN|장르|발행)[ \t]*[:：][^\n]*(?:\n[ \t]*(?:원제|저자|역자|번역|출판사|정가|ISBN|장르|발행)[ \t]*[:：][^\n]*)*[ \t\r\n]*$/i;
+
+function detectAndShowMetaMatter(text){
+  var box=document.getElementById('metaMatterBox');
+  if(!box)return;
+  box.innerHTML='';box.style.display='none';
+  if(!rawCh.length)return;
+  var firstIdx=text.search(CH_RE);
+  var frontRaw=firstIdx>0?text.slice(0,firstIdx).trim():'';
+  var lastCh=rawCh[rawCh.length-1];
+  var backM=lastCh.content.match(BACK_META_RE);
+  var backRaw=backM?backM[0].trim():'';
+  if(!frontRaw&&!backRaw)return;
+  var firstOrigContent=rawCh[0].content;
+  var lastFullContent=lastCh.content;
+  var lastStrippedContent=backM?lastCh.content.slice(0,backM.index).trim():lastCh.content;
+  if(backRaw)lastCh.content=lastStrippedContent; // 기본: 뒤쪽 메타정보는 자동으로 제거
+  function row(label,sample,checked,onToggle){
+    var wrap=document.createElement('div');
+    wrap.style.cssText='padding:8px 12px;background:#fff8e8;border:1px solid #e0c060;border-radius:8px;font-size:12px;color:var(--wn);line-height:1.5;';
+    var short=sample.length>80?sample.slice(0,80)+'…':sample;
+    wrap.innerHTML='<div style="display:flex;align-items:flex-start;gap:8px;">'
+      +'<input type="checkbox" style="margin-top:2px;flex-shrink:0;">'
+      +'<div style="flex:1;"><b>'+label+'</b><br><span style="opacity:.8;white-space:pre-wrap;">'+esc(short)+'</span></div>'
+      +'</div>';
+    var ck=wrap.querySelector('input');ck.checked=checked;
+    ck.addEventListener('change',function(){onToggle(ck.checked);});
+    return wrap;
+  }
+  if(frontRaw){
+    box.appendChild(row('본문 시작 전에 있던 내용 (자동 제외됨)',frontRaw,true,function(remove){
+      rawCh[0].content=remove?firstOrigContent:(frontRaw+'\n\n'+firstOrigContent);
+    }));
+  }
+  if(backRaw){
+    box.appendChild(row('마지막 챕터 끝에 붙어있던 내용 (제거됨)',backRaw,true,function(remove){
+      lastCh.content=remove?lastStrippedContent:lastFullContent;
+    }));
+  }
+  box.style.display='flex';
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -886,6 +932,7 @@ async function loadChaptersFromText(text,displayName){
   if(autoDup>0)toast(autoDup+'개 동일 중복 회차 자동 제거됨','wrn');
   rem.sort(function(a,b){return b-a;}).forEach(function(i){final.splice(i,1);});
   rawCh=final;chOrd=final.map(function(_,i){return i;});excl=new Set();
+  detectAndShowMetaMatter(text);
   var miss=getMiss(final);
   var badge=document.getElementById('badgeOk');badge.style.display='block';
   badge.textContent='✓ '+displayName+'  ·  '+final.length+'개 챕터'+(miss.length?'\n⚠ 누락 회차: '+miss.join(', ')+'화':'');
@@ -1530,26 +1577,23 @@ function detectBodyCssValues(css){
 function applyDetectedCssValues(det){
   var box=document.getElementById('detectedCssInfo');
   if(!box)return;
+  /* 슬라이더 기본값(줄높이 1.75 / 문단 위 0.6 / 문단 아래 1.4)은 파일에 따라 바뀌지 않고 항상 고정.
+     감지된 원본 값은 참고용 안내 문구로만 보여준다. */
+  if(det.lineHeight==null&&det.bodyMargin==null&&det.pMarginTop==null&&det.pMarginBottom==null){
+    box.style.display='none';return;
+  }
   var lh=det.lineHeight!=null?det.lineHeight:1.75;
   var bm=det.bodyMargin!=null?det.bodyMargin:0;
   var pt=det.pMarginTop!=null?det.pMarginTop:0.6;
   var pb=det.pMarginBottom!=null?det.pMarginBottom:1.4;
   var sum=pt+pb;
-  ['epLineHeight','epLineHeightNum'].forEach(function(id){document.getElementById(id).value=lh;});
-  ['epBodyMargin','epBodyMarginNum'].forEach(function(id){document.getElementById(id).value=bm;});
-  ['epPMarginT','epPMarginTNum'].forEach(function(id){document.getElementById(id).value=pt;});
-  ['epPMarginB','epPMarginBNum'].forEach(function(id){document.getElementById(id).value=pb;});
-  document.getElementById('lblEpLineHeight').textContent=lh.toFixed(2);
-  document.getElementById('lblEpBodyMargin').textContent=bm.toFixed(1)+'em';
-  document.getElementById('lblEpPMarginT').textContent=pt.toFixed(1)+'em';
-  document.getElementById('lblEpPMarginB').textContent=pb.toFixed(1)+'em';
-  updateEpBodyPreview();
   var warn=sum>=2;
   box.style.display='block';
   box.style.color=warn?'#c0392b':'var(--mu)';
   box.innerHTML='📎 원본에서 감지된 값 — 줄높이 '+lh.toFixed(2)+' · 좌우여백 '+bm.toFixed(1)+'em · 문단 위/아래 '
     +pt.toFixed(1)+'em / '+pb.toFixed(1)+'em <b>(합계 '+sum.toFixed(1)+'em)</b>'
-    +(warn?' — 이미 넓은 편이니 추가로 늘리지 않는 걸 추천해요.':'');
+    +(warn?' — 이미 넓은 편이니 추가로 늘리지 않는 걸 추천해요.':'')
+    +'<br>※ 위 슬라이더 기본값(줄높이 1.75 · 문단 위 0.6em · 아래 1.4em)은 이 값과 무관하게 고정돼요.';
 }
 
 (function(){
