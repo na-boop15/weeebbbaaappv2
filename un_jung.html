@@ -1203,9 +1203,18 @@ function detectTitleStructure(html){
   var re=/<div[^>]+class=["']([^"']*header[^"']*)["'][^>]*>[\s\S]{0,300}?<h([1-4])\b/i;
   var m=html.match(re);
   if(m)return{boxClasses:m[1].split(/\s+/).filter(Boolean),tag:'h'+m[2]};
-  /* header류 박스를 못 찾았으면 본문에서 첫 heading 태그만이라도 찾아서 사용한다 */
-  var m2=html.match(/<h([1-4])\b/i);
-  return{boxClasses:[],tag:m2?('h'+m2[1]):'h3'};
+  /* header류 박스를 못 찾았으면 본문에서 heading 태그를 찾되, 실제 텍스트가 들어있는
+     것만 인정한다. 일부 EPUB(카카오페이지류)은 <h1 class="mainTitle" title="..."></h1>처럼
+     내용은 비어있고 title 속성만 있는 챕터 시작 마커용 h태그를 쓰는데, 이걸 "제목"으로
+     오인식하면 여백/정렬 설정이 화면에 안 보이는 태그에 적용되어 정작 눈에 보이는
+     제목(보통 별도 p 안의 굵은 글씨)은 그대로 두고 엉뚱한 위치에 빈 공간만 생긴다. */
+  var hRe=/<h([1-4])\b[^>]*>([\s\S]*?)<\/h\1>/gi;
+  var hm;
+  while((hm=hRe.exec(html))!==null){
+    var innerText=hm[2].replace(/<[^>]+>/g,'').replace(/&nbsp;|\u00a0/g,'').trim();
+    if(innerText)return{boxClasses:[],tag:'h'+hm[1]};
+  }
+  return{boxClasses:[],tag:null};
 }
 
 async function parseTocEntries(zip){
@@ -1948,14 +1957,17 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
       var pb=document.getElementById('epPMarginB').value;
       patched=patchBlock(patched,'body',{'line-height':lh,'margin':'0 '+bm+'em'});
       /* p 자체의 문단 간격(위/아래 마진) 적용. 기존 padding으로 간격을 주던 원본 스타일과
-         겹쳐서 이중으로 벌어지지 않도록 padding은 0으로 정리한다 */
-      patched=patchBlock(patched,'p',{'margin':pt+'em 0 '+pb+'em','padding':'0'});
+         겹쳐서 이중으로 벌어지지 않도록 padding은 0으로 정리한다.
+         !important 필수 — 카카오페이지류 원본처럼 <p class="normal">같이 본문 p에
+         자체 class가 박혀있는 EPUB은 그 class 규칙(.normal{margin:...})이 클래스
+         선택자라서 그냥 p{...}보다 항상 우선순위가 높아 슬라이더 설정이 무시된다. */
+      patched=patchBlock(patched,'p',{'margin':pt+'em 0 '+pb+'em!important','padding':'0!important'});
       /* body에 줄높이를 줘도 .aegix 같은 래퍼 class가 자체 line-height/문단 스타일을
          갖고 있으면 그게 우선 적용되므로, 그런 래퍼 class와 그 안의 p도 함께 패치한다 */
       var wrapClass=sampleHtml?detectContentWrapClass(sampleHtml):null;
       if(wrapClass){
         patched=patchBlock(patched,'.'+wrapClass,{'line-height':lh});
-        patched=patchBlock(patched,'.'+wrapClass+' p',{'margin':pt+'em 0 '+pb+'em','padding':'0'});
+        patched=patchBlock(patched,'.'+wrapClass+' p',{'margin':pt+'em 0 '+pb+'em!important','padding':'0!important'});
         toast('본문 줄높이/문단 간격 — .'+wrapClass+' 클래스에도 적용됨','ok');
       }
     }
@@ -1976,8 +1988,12 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
     var titleStruct=sampleHtml?detectTitleStructure(sampleHtml):{boxClasses:[],tag:'h3'};
     var titleTag=titleStruct.tag;
     if(Object.keys(h3patches).length>0){
-      patched=patchBlock(patched,titleTag,h3patches);
-      if(titleTag!=='h3') toast('이 책의 제목 태그는 '+titleTag+'로 감지되어 그쪽에 적용됨','ok');
+      if(titleTag){
+        patched=patchBlock(patched,titleTag,h3patches);
+        if(titleTag!=='h3') toast('이 책의 제목 태그는 '+titleTag+'로 감지되어 그쪽에 적용됨','ok');
+      }else{
+        toast('제목으로 쓰인 heading 태그를 찾지 못해 챕터 제목 설정을 건너뜀 (제목이 h1~h4가 아닌 p 등으로 되어 있을 수 있음)','wrn');
+      }
     }
 
     /* 제목을 감싸는 'header' 박스가 고정 height/padding이나 padding-left:62% 같은
@@ -2088,7 +2104,10 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
        '완전히 제거'는 빈 줄 자체를 삭제해 일반 문단 간격과 동일하게 만듦 */
     if(useBlankLine){
       var blankMode=document.querySelector('input[name="blankMode"]:checked').value;
-      var blankRe=/<p(?![^>]*class=)([^>]*)>\s*(?:<br\s*\/?>|&nbsp;|\u00a0)\s*<\/p>/gi;
+      /* class 유무와 상관없이 <br/>/&nbsp;만 든 빈 문단은 전부 매칭한다.
+         (예전엔 class 있는 <p>를 제외했는데, class="normal"처럼 본문 p 전체에
+         class가 박혀있는 EPUB은 빈 줄도 전부 class가 있어서 하나도 안 걸러졌음) */
+      var blankRe=/<p([^>]*)>\s*(?:<br\s*\/?>|&nbsp;|\u00a0)\s*<\/p>/gi;
       if(blankMode==='height'){
         var blankH=document.getElementById('epBlankH').value;
         patched=patchBlock(patched,'.blankline',{'margin':'0!important','line-height':blankH+'em!important'});
@@ -2100,7 +2119,11 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
         var bs=await workZip.file(bp).async('string');
         var bsNew=bs.replace(blankRe,function(m,attrs){
           blankCnt++;
-          return blankMode==='remove'?'':'<p class="blankline"'+attrs+'><br/></p>';
+          if(blankMode==='remove')return'';
+          /* attrs에 이미 class="normal" 같은 원본 class가 있으면 제거하고
+             blankline 클래스로 교체 (중복 class 속성 방지) */
+          var cleanAttrs=attrs.replace(/\s*class\s*=\s*["'][^"']*["']/i,'');
+          return '<p class="blankline"'+cleanAttrs+'><br/></p>';
         });
         if(bsNew!==bs)workZip.file(bp,bsNew);
         if(bi%20===0)await tick();
