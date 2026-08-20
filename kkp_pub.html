@@ -225,6 +225,27 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
         <div id="img-list" style="display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;"></div>
       </div>
 
+      <div class="card" id="img-mgr-panel">
+        <div class="card-hd"><span class="snum">🗂</span> 이미지 통합 관리 · 용량 최적화</div>
+        <div id="img-mgr-empty" style="font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;padding:6px 0;">표지·삽화 이미지를 추가하면 여기서 한 번에 이름 변경·교체·삭제·압축할 수 있어요.</div>
+        <div id="img-mgr-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;max-height:360px;overflow-y:auto;margin-bottom:12px;"></div>
+        <div style="border-top:1px solid var(--bd);padding-top:10px;display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <label style="font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;flex-shrink:0;">품질</label>
+            <input type="range" id="imgmgr-quality" min="0.4" max="0.95" step="0.05" value="0.8" style="flex:1;" oninput="scheduleImgMgrPreview()"/>
+            <span id="imgmgr-quality-val" style="font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;width:36px;text-align:right;">80%</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <label style="font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;flex-shrink:0;">최대 폭(px)</label>
+            <input type="number" id="imgmgr-maxwidth" value="1600" min="200" step="100" style="flex:1;padding:6px 8px;border:1.5px solid var(--bd);border-radius:7px;font-size:12px;background:var(--surf);color:var(--tx);" oninput="scheduleImgMgrPreview()"/>
+          </div>
+          <div id="imgmgr-preview" style="font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;"></div>
+          <div id="img-mgr-total" style="font-size:10px;color:var(--mu);font-family:'DM Mono',monospace;"></div>
+          <button class="btn btn-secondary" style="width:100%;padding:8px;font-size:12px;" onclick="applyImgMgrCompression()">📦 전체 압축 적용</button>
+          <div style="font-size:10px;color:var(--mu);line-height:1.6;">움직이는 GIF는 압축 대상에서 자동 제외되고 원본 그대로 유지됩니다. 투명 배경(PNG)은 압축 후에도 유지됩니다.</div>
+        </div>
+      </div>
+
     </div>
 
     <!-- 우: 설정 -->
@@ -823,7 +844,7 @@ function removeFile(i){
   reindexImgMapAfterDelete(i);
   Object.keys(S.tocOverrides).forEach(function(k){var ki=parseInt(k);if(ki<i)newToc[ki]=S.tocOverrides[ki];else if(ki>i)newToc[ki-1]=S.tocOverrides[ki];});
   S.tocOverrides=newToc;
-  S.files.splice(i,1);renderList();renderToc();renderImgPanel();
+  S.files.splice(i,1);renderList();renderToc();renderImgPanel();if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();
 }
 function clearAll(){
   S.files=[];S.imgMap={};S.tocOverrides={};
@@ -946,7 +967,7 @@ function renderToc(){
         reindexImgMapAfterDelete(idx);
         Object.keys(S.tocOverrides).forEach(function(k){var ki=parseInt(k);if(ki<idx)newToc[ki]=S.tocOverrides[ki];else if(ki>idx)newToc[ki-1]=S.tocOverrides[ki];});
         S.tocOverrides=newToc;
-        S.files.splice(idx,1);renderList();renderToc();renderImgPanel();applyAutoCompletion();toast('챕터 삭제됨','ok');
+        S.files.splice(idx,1);renderList();renderToc();renderImgPanel();if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();applyAutoCompletion();toast('챕터 삭제됨','ok');
       });
     })(i);
     row.appendChild(del);
@@ -1096,7 +1117,7 @@ function renderImgPanel(){
         r.onload=function(ev){
           var b64=ev.target.result;var mt=file.type||'image/jpeg';
           var ext=mt.includes('png')?'png':mt.includes('gif')?'gif':mt.includes('webp')?'webp':'jpg';
-          S.imgMap[key]={b64:b64,ext:ext,mt:mt,name:file.name};renderImgPanel();toast('이미지 연결됨','ok');
+          S.imgMap[key]={b64:b64,ext:ext,mt:mt,name:file.name};renderImgPanel();if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();toast('이미지 연결됨','ok');
         };r.readAsDataURL(file);e.target.value='';
       });
     })(item.key);
@@ -1104,7 +1125,7 @@ function renderImgPanel(){
     if(imgData){
       var delBtn=document.createElement('button');
       delBtn.className='btn btn-ghost btn-sm';delBtn.textContent='✕';delBtn.style.color='var(--er)';
-      (function(key){delBtn.addEventListener('click',function(){delete S.imgMap[key];renderImgPanel();});})(item.key);
+      (function(key){delBtn.addEventListener('click',function(){delete S.imgMap[key];renderImgPanel();if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();});})(item.key);
       row.appendChild(delBtn);
     }
     list.appendChild(row);
@@ -1130,6 +1151,182 @@ function deleteSelectedIllustrations(){
   });
   renderImgPanel();renderToc();
   toast(checks.length+'개 삽화 삭제됨','ok');
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 이미지 통합 관리 — 표지 / 중간 삽입 표지 / 본문 삽화를
+// 한 화면에서 이름 변경·교체·삭제하고, 캔버스 기반으로 일괄 압축(용량 최적화)한다.
+// 움직이는 GIF는 캔버스를 거치면 애니메이션이 깨지므로 압축 대상에서 제외하고 원본을 유지한다.
+// ══════════════════════════════════════════════════════════════
+function b64SizeBytes(durl){
+  if(!durl)return 0;
+  var i=durl.indexOf(',');
+  var b=i>=0?durl.slice(i+1):durl;
+  return Math.floor(b.length*0.75);
+}
+function fmtKB(bytes){return (bytes/1024).toFixed(1)+' KB';}
+
+function collectImgMgrItems(){
+  var items=[];
+  if(S.coverData)items.push({kind:'cover',ref:S.coverData,label:S.coverData.name||'표지'});
+  (S.coverInserts||[]).forEach(function(ins,i){
+    items.push({kind:'insert',idx:i,ref:ins.imgData,label:ins.imgData.name||(ins.targetName.replace(/\.\w+$/,'')+' 앞 표지')});
+  });
+  Object.keys(S.imgMap||{}).forEach(function(key){
+    items.push({kind:'inline',key:key,ref:S.imgMap[key],label:S.imgMap[key].name||('삽화 '+key)});
+  });
+  return items;
+}
+
+function renderImgMgrPanel(){
+  var wrap=document.getElementById('img-mgr-grid');
+  if(!wrap)return;
+  var items=collectImgMgrItems();
+  var empty=document.getElementById('img-mgr-empty');
+  wrap.innerHTML='';
+  if(!items.length){if(empty)empty.style.display='block';updateImgMgrTotals();return;}
+  if(empty)empty.style.display='none';
+  items.forEach(function(item){
+    var cell=document.createElement('div');
+    cell.style.cssText='display:flex;flex-direction:column;gap:5px;padding:7px;background:var(--s2);border:1px solid var(--bd);border-radius:8px;';
+    var thumb=document.createElement('div');
+    thumb.style.cssText='width:100%;aspect-ratio:3/4;border-radius:6px;overflow:hidden;background:var(--surf);';
+    thumb.innerHTML='<img src="'+item.ref.b64+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>';
+    cell.appendChild(thumb);
+    var typeTag=document.createElement('span');
+    typeTag.style.cssText='font-size:9px;color:var(--mu);font-family:\'DM Mono\',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    typeTag.textContent=(item.kind==='cover'?'표지':item.kind==='insert'?'중간표지':'삽화')+' · '+fmtKB(b64SizeBytes(item.ref.b64))+(item.ref.mt==='image/gif'?' · GIF':'');
+    cell.appendChild(typeTag);
+    var nameInp=document.createElement('input');
+    nameInp.type='text';nameInp.value=item.label;
+    nameInp.style.cssText='width:100%;padding:4px 6px;font-size:10px;border:1.5px solid var(--bd);border-radius:5px;background:var(--surf);color:var(--tx);';
+    nameInp.addEventListener('change',function(){item.ref.name=nameInp.value.trim();});
+    cell.appendChild(nameInp);
+    var btnRow=document.createElement('div');
+    btnRow.style.cssText='display:flex;gap:4px;';
+    var replLabel=document.createElement('label');
+    replLabel.className='btn btn-ghost btn-sm';
+    replLabel.style.cssText='flex:1;text-align:center;cursor:pointer;padding:4px 2px;font-size:10px;position:relative;';
+    replLabel.textContent='교체';
+    var replInp=document.createElement('input');
+    replInp.type='file';replInp.accept='image/*';replInp.style.cssText='position:absolute;left:-9999px;';
+    replInp.addEventListener('change',function(e){
+      var file=e.target.files[0];if(!file)return;
+      var r=new FileReader();
+      r.onload=function(ev){
+        var mt=file.type||'image/jpeg';
+        var ext=mt.includes('png')?'png':mt.includes('gif')?'gif':mt.includes('webp')?'webp':'jpg';
+        item.ref.b64=ev.target.result;item.ref.ext=ext;item.ref.mt=mt;
+        if(item.kind==='cover'){
+          var ct=document.getElementById('cover-thumb');
+          if(ct)ct.innerHTML='<img src="'+ev.target.result+'" style="width:100%;height:100%;object-fit:cover;border-radius:7px;" alt=""/>';
+        }
+        renderImgMgrPanel();renderImgPanel();renderCoverInsertList();
+        toast('이미지 교체됨','ok');
+      };r.readAsDataURL(file);e.target.value='';
+    });
+    replLabel.appendChild(replInp);btnRow.appendChild(replLabel);
+    var delBtn=document.createElement('button');
+    delBtn.className='btn btn-ghost btn-sm';
+    delBtn.style.cssText='flex:1;padding:4px 2px;font-size:10px;color:var(--er);';
+    delBtn.textContent='삭제';
+    delBtn.addEventListener('click',function(){
+      if(item.kind==='cover'){clearCover();}
+      else if(item.kind==='insert'){removeCoverInsert(item.idx);}
+      else{delete S.imgMap[item.key];renderImgPanel();}
+      renderImgMgrPanel();
+    });
+    btnRow.appendChild(delBtn);
+    cell.appendChild(btnRow);
+    wrap.appendChild(cell);
+  });
+  updateImgMgrTotals();
+}
+
+function updateImgMgrTotals(){
+  var el=document.getElementById('img-mgr-total');
+  if(!el)return;
+  var items=collectImgMgrItems();
+  if(!items.length){el.textContent='';return;}
+  var total=items.reduce(function(s,it){return s+b64SizeBytes(it.ref.b64);},0);
+  el.textContent='현재 총 용량: '+fmtKB(total)+' ('+items.length+'개)';
+}
+
+function loadImageEl(b64){
+  return new Promise(function(res,rej){
+    var img=new Image();
+    img.onload=function(){res(img);};
+    img.onerror=function(){rej(new Error('image load failed'));};
+    img.src=b64;
+  });
+}
+
+// GIF는 캔버스를 거치면 애니메이션이 첫 프레임으로 고정되어버리므로 압축 대상에서 제외하고 null을 반환한다.
+async function compressOne(ref,quality,maxWidth){
+  if(!ref||ref.mt==='image/gif')return null;
+  var img=await loadImageEl(ref.b64);
+  var w=img.naturalWidth||img.width,h=img.naturalHeight||img.height;
+  if(!w||!h)return null;
+  if(w>maxWidth){h=Math.round(h*(maxWidth/w));w=maxWidth;}
+  var canvas=document.createElement('canvas');
+  canvas.width=w;canvas.height=h;
+  var ctx=canvas.getContext('2d');
+  ctx.drawImage(img,0,0,w,h);
+  // PNG는 투명 배경 보존을 위해 포맷을 유지(품질 파라미터는 무시됨, 리사이즈로만 용량 감소)
+  var mimeOut=ref.mt==='image/png'?'image/png':(ref.mt==='image/webp'?'image/webp':'image/jpeg');
+  var out=canvas.toDataURL(mimeOut,quality);
+  var actualMime=out.slice(5,out.indexOf(';'))||mimeOut;
+  var ext=actualMime.includes('png')?'png':actualMime.includes('webp')?'webp':'jpg';
+  return {b64:out,ext:ext,mt:actualMime,size:b64SizeBytes(out)};
+}
+
+var imgMgrPreviewTimer=null;
+function scheduleImgMgrPreview(){
+  document.getElementById('imgmgr-quality-val').textContent=Math.round(parseFloat(document.getElementById('imgmgr-quality').value)*100)+'%';
+  clearTimeout(imgMgrPreviewTimer);
+  imgMgrPreviewTimer=setTimeout(computeImgMgrPreview,350);
+}
+async function computeImgMgrPreview(){
+  var q=parseFloat(document.getElementById('imgmgr-quality').value);
+  var mw=parseInt(document.getElementById('imgmgr-maxwidth').value)||1600;
+  var items=collectImgMgrItems();
+  var previewEl=document.getElementById('imgmgr-preview');
+  if(!items.length){previewEl.textContent='';return;}
+  previewEl.textContent='예상 용량 계산 중...';
+  var origTotal=0,estTotal=0,skipGif=0;
+  for(var i=0;i<items.length;i++){
+    var ref=items[i].ref;
+    var origSize=b64SizeBytes(ref.b64);
+    origTotal+=origSize;
+    if(ref.mt==='image/gif'){estTotal+=origSize;skipGif++;continue;}
+    try{
+      var r=await compressOne(ref,q,mw);
+      estTotal+=r?r.size:origSize;
+    }catch(e){estTotal+=origSize;}
+  }
+  var pct=origTotal?Math.round((1-estTotal/origTotal)*100):0;
+  previewEl.textContent='예상: '+fmtKB(origTotal)+' → 약 '+fmtKB(estTotal)+' ('+(pct>0?'-'+pct+'%':pct+'%')+')'+(skipGif?' · GIF '+skipGif+'개 제외':'');
+}
+async function applyImgMgrCompression(){
+  var q=parseFloat(document.getElementById('imgmgr-quality').value);
+  var mw=parseInt(document.getElementById('imgmgr-maxwidth').value)||1600;
+  var items=collectImgMgrItems();
+  if(!items.length){toast('압축할 이미지가 없습니다','err');return;}
+  toast('압축 적용 중...','ok');
+  var applied=0;
+  for(var i=0;i<items.length;i++){
+    var ref=items[i].ref;
+    if(ref.mt==='image/gif')continue;
+    try{
+      var r=await compressOne(ref,q,mw);
+      if(r){ref.b64=r.b64;ref.ext=r.ext;ref.mt=r.mt;applied++;}
+    }catch(e){}
+  }
+  var ct=document.getElementById('cover-thumb');
+  if(S.coverData&&ct)ct.innerHTML='<img src="'+S.coverData.b64+'" style="width:100%;height:100%;object-fit:cover;border-radius:7px;" alt=""/>';
+  renderImgMgrPanel();renderImgPanel();renderCoverInsertList();
+  computeImgMgrPreview();
+  toast(applied+'개 이미지 압축 적용됨','ok');
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1410,6 +1607,7 @@ function toggleSelectAll(chk){
 function clearCover(){
   S.coverData=null;
   document.getElementById('cover-thumb').innerHTML='📖';
+  if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();
   toast('표지 제거됨');
 }
 
@@ -1436,6 +1634,7 @@ async function applyCoverFromUrl(){
       S.coverData={b64:ev.target.result,ext:ext,mt:mt};
       document.getElementById('cover-thumb').innerHTML='<img src="'+ev.target.result+'" style="width:100%;height:100%;object-fit:cover;border-radius:7px;" alt=""/>';
       input.value='';
+      if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();
       toast('표지 적용됨','ok');
     };
     reader.readAsDataURL(blob);
@@ -1468,11 +1667,13 @@ function addCoverInsert(){
   document.getElementById('cover-insert-img-preview').textContent='';
   document.getElementById('cover-insert-img-input').value='';
   renderCoverInsertList();
+  if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();
   toast('삽입 예약됨 — EPUB 생성 시 반영됩니다','ok');
 }
 function removeCoverInsert(idx){
   S.coverInserts.splice(idx,1);
   renderCoverInsertList();
+  if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();
 }
 function renderCoverInsertList(){
   var wrap=document.getElementById('cover-insert-list');
@@ -2146,7 +2347,7 @@ async function buildEpub(){
       var ext=mt.includes('png')?'png':mt.includes('gif')?'gif':mt.includes('webp')?'webp':'jpg';
       var imgData={b64:b64,ext:ext,mt:mt,name:file.name};
       document.querySelectorAll('.img-row-chk:checked').forEach(function(chk){S.imgMap[chk.dataset.key]=imgData;});
-      renderImgPanel();toast('이미지 적용됨','ok');
+      renderImgPanel();if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();toast('이미지 적용됨','ok');
     };r.readAsDataURL(file);e.target.value='';
   });
   document.getElementById('cover-input').addEventListener('change',function(e){
@@ -2158,6 +2359,7 @@ async function buildEpub(){
       S.coverData={b64:b64,ext:ext,mt:mt};
       var thumb=document.getElementById('cover-thumb');
       thumb.innerHTML='<img src="'+b64+'" style="width:100%;height:100%;object-fit:cover;border-radius:7px;" alt=""/>';
+      if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();
       toast('표지 설정됨','ok');
     };r.readAsDataURL(file);e.target.value='';
   });
@@ -2173,7 +2375,7 @@ async function buildEpub(){
   });
 })();
 
-renderList();renderToc();renderImgPanel();updateFilenamePreview();updateExtractedCssPreview();
+renderList();renderToc();renderImgPanel();renderImgMgrPanel();updateFilenamePreview();updateExtractedCssPreview();
   // 자동추출 체크박스 이벤트
   document.getElementById('chk-extract-css').addEventListener('change',updateExtractedCssPreview);
 </script>
