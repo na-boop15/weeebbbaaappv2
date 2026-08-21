@@ -1217,6 +1217,17 @@ function detectTitleStructure(html){
   return{boxClasses:[],tag:null};
 }
 
+/* h1~h4가 전부 내용 없는 마커용 태그뿐일 때, 그 마커 바로 뒤에 실제로 화면에
+   표시되는 제목(굵은 글씨 문단)이 있는지 확인한다. 카카오페이지류 EPUB에서
+   <h1 class="mainTitle" title="..."></h1> 다음에 이미지·빈 줄을 거쳐
+   <p class="normal"><b>218화 ...</b></p> 형태로 진짜 제목이 오는 패턴. */
+function detectVisibleTitleAfterEmptyHeading(html){
+  var hm=html.match(/<h[1-4]\b[^>]*>\s*<\/h[1-4]>/i);
+  if(!hm)return false;
+  var rest=html.slice(hm.index+hm[0].length,hm.index+hm[0].length+3000);
+  return /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?<b\b/i.test(rest);
+}
+
 async function parseTocEntries(zip){
   /* toc.ncx 파싱 → [{title, src, file, anchor}] */
   var ncxPath=null;
@@ -1987,10 +1998,17 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
        'h3'로 고정 패치하면 아무 효과 없는 빈 규칙만 추가되고 진짜 제목은 안 바뀐다 */
     var titleStruct=sampleHtml?detectTitleStructure(sampleHtml):{boxClasses:[],tag:'h3'};
     var titleTag=titleStruct.tag;
+    var needsVisibleTitleTagging=false;
     if(Object.keys(h3patches).length>0){
       if(titleTag){
         patched=patchBlock(patched,titleTag,h3patches);
         if(titleTag!=='h3') toast('이 책의 제목 태그는 '+titleTag+'로 감지되어 그쪽에 적용됨','ok');
+      }else if(sampleHtml&&detectVisibleTitleAfterEmptyHeading(sampleHtml)){
+        /* h1~h4가 전부 비어있는(마커용) 이 EPUB은, 그 마커 바로 뒤 처음 나오는
+           굵은 글씨(<b>) 문단이 실제로 화면에 보이는 챕터 제목이다. class가 본문과
+           같아 CSS만으로는 구분이 안 되므로, 파일별로 그 문단에 전용 class를
+           직접 붙여서 타겟팅한다 (htmlPathsAll 준비된 뒤 실제 태깅 실행) */
+        needsVisibleTitleTagging=true;
       }else{
         toast('제목으로 쓰인 heading 태그를 찾지 못해 챕터 제목 설정을 건너뜀 (제목이 h1~h4가 아닌 p 등으로 되어 있을 수 있음)','wrn');
       }
@@ -2022,6 +2040,31 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
     /* 장면전환·괄호주석 클래스 자동 감지 — 언정이 만들지 않은(.scene/.comment가 아닌) EPUB도 지원 */
     var htmlPathsAll=[];
     workZip.forEach(function(p){if(/\.(xhtml|html|htm)$/i.test(p)&&!/cover|title|nav/i.test(p))htmlPathsAll.push(p);});
+
+    if(needsVisibleTitleTagging){
+      epProg(58,'화면에 보이는 챕터 제목 문단 태깅 ('+htmlPathsAll.length+'개)...');
+      var titleTagRe=/(<h[1-4]\b[^>]*>\s*<\/h[1-4]>[\s\S]{0,3000}?<p\b)([^>]*)(>(?:(?!<\/p>)[\s\S])*?<b\b)/i;
+      var visTitleTagged=0;
+      for(var vi=0;vi<htmlPathsAll.length;vi++){
+        var vp=htmlPathsAll[vi];
+        var vHtml=await workZip.file(vp).async('string');
+        var vm=vHtml.match(titleTagRe);
+        if(!vm)continue;
+        var vAttrs=vm[2];
+        var vNewAttrs=/class\s*=/i.test(vAttrs)
+          ?vAttrs.replace(/class\s*=\s*(["'])([^"']*)\1/i,function(f,q,cls){return 'class='+q+cls+' epChapTitle'+q;})
+          :vAttrs+' class="epChapTitle"';
+        var vNewHtml=vHtml.replace(titleTagRe,vm[1]+vNewAttrs+vm[3]);
+        workZip.file(vp,vNewHtml);
+        visTitleTagged++;
+      }
+      if(visTitleTagged>0){
+        patched=patchBlock(patched,'.epChapTitle',h3patches);
+        toast('제목이 heading 태그가 아니라 본문과 같은 class의 p라서, 실제 제목 문단('+visTitleTagged+'개 챕터)에 전용 class를 붙여서 설정을 적용함','ok');
+      }else{
+        toast('제목으로 쓰인 heading 태그를 찾지 못해 챕터 제목 설정을 건너뜀 (제목이 h1~h4가 아닌 p 등으로 되어 있을 수 있음)','wrn');
+      }
+    }
     var sceneClass=null,commentClass=null;
     for(var di=0;di<Math.min(htmlPathsAll.length,5)&&(!sceneClass||!commentClass);di++){
       var dHtml=await workZip.file(htmlPathsAll[di]).async('string');
