@@ -423,10 +423,24 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
       </div>
 
       <div class="card">
-        <button class="btn btn-primary" id="build-btn" onclick="buildEpub()">EPUB 생성하기</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost" style="flex:1;" onclick="openChapterPreview()">🔍 미리보기</button>
+          <button class="btn btn-primary" id="build-btn" style="flex:2;" onclick="buildEpub()">EPUB 생성하기</button>
+        </div>
         <div class="prog-wrap" id="prog-wrap" style="margin-top:10px;">
           <div class="prog-bar"><div class="prog-fill" id="prog-fill"></div></div>
           <div class="prog-lbl" id="prog-lbl"></div>
+        </div>
+      </div>
+
+      <div id="preview-modal" style="display:none;position:fixed;inset:0;background:rgba(13,31,53,.55);z-index:200;align-items:center;justify-content:center;padding:16px;">
+        <div style="background:var(--surf);border-radius:12px;max-width:640px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.3);">
+          <div style="padding:14px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <span style="font-family:'DM Mono',monospace;font-size:13px;font-weight:600;color:var(--tx);">📖 챕터 미리보기</span>
+            <span id="preview-count" style="font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;"></span>
+            <button class="btn btn-ghost btn-sm" style="margin-left:auto;padding:4px 10px;" onclick="closeChapterPreview()">닫기 ✕</button>
+          </div>
+          <div id="preview-list" style="overflow-y:auto;padding:4px 0;"></div>
         </div>
       </div>
 
@@ -1178,36 +1192,61 @@ function collectImgMgrItems(){
   return items;
 }
 
+function groupImgMgrItems(items){
+  var groupsByB64={},order=[];
+  items.forEach(function(item){
+    var k=item.ref.b64;
+    if(!groupsByB64[k]){groupsByB64[k]={items:[],b64:k};order.push(groupsByB64[k]);}
+    groupsByB64[k].items.push(item);
+  });
+  return order;
+}
+
 function renderImgMgrPanel(){
   var wrap=document.getElementById('img-mgr-grid');
   if(!wrap)return;
   var items=collectImgMgrItems();
+  var groups=groupImgMgrItems(items);
   var empty=document.getElementById('img-mgr-empty');
   wrap.innerHTML='';
   if(!items.length){if(empty)empty.style.display='block';updateImgMgrTotals();return;}
   if(empty)empty.style.display='none';
-  items.forEach(function(item){
+  groups.forEach(function(group){
+    var primary=group.items[0];
+    var kinds=group.items.map(function(it){return it.kind;});
+    var kindLabel=kinds.every(function(k){return k===kinds[0];})
+      ?(kinds[0]==='cover'?'표지':kinds[0]==='insert'?'중간표지':'삽화')
+      :'표지·삽화 혼합';
     var cell=document.createElement('div');
     cell.style.cssText='display:flex;flex-direction:column;gap:5px;padding:7px;background:var(--s2);border:1px solid var(--bd);border-radius:8px;';
     var thumb=document.createElement('div');
-    thumb.style.cssText='width:100%;aspect-ratio:3/4;border-radius:6px;overflow:hidden;background:var(--surf);';
-    thumb.innerHTML='<img src="'+item.ref.b64+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>';
+    thumb.style.cssText='width:100%;aspect-ratio:3/4;border-radius:6px;overflow:hidden;background:var(--surf);position:relative;';
+    thumb.innerHTML='<img src="'+primary.ref.b64+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>';
+    if(group.items.length>1){
+      var badge=document.createElement('span');
+      badge.style.cssText='position:absolute;top:3px;right:3px;background:var(--ac);color:#fff;font-size:9px;font-family:\'DM Mono\',monospace;padding:1px 5px;border-radius:20px;';
+      badge.textContent='×'+group.items.length;
+      thumb.appendChild(badge);
+    }
     cell.appendChild(thumb);
     var typeTag=document.createElement('span');
     typeTag.style.cssText='font-size:9px;color:var(--mu);font-family:\'DM Mono\',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
-    typeTag.textContent=(item.kind==='cover'?'표지':item.kind==='insert'?'중간표지':'삽화')+' · '+fmtKB(b64SizeBytes(item.ref.b64))+(item.ref.mt==='image/gif'?' · GIF':'');
+    typeTag.textContent=kindLabel+' · '+fmtKB(b64SizeBytes(primary.ref.b64))+(primary.ref.mt==='image/gif'?' · GIF':'')+(group.items.length>1?' · 동일 이미지 '+group.items.length+'곳':'');
     cell.appendChild(typeTag);
     var nameInp=document.createElement('input');
-    nameInp.type='text';nameInp.value=item.label;
+    nameInp.type='text';nameInp.value=primary.label;
     nameInp.style.cssText='width:100%;padding:4px 6px;font-size:10px;border:1.5px solid var(--bd);border-radius:5px;background:var(--surf);color:var(--tx);';
-    nameInp.addEventListener('change',function(){item.ref.name=nameInp.value.trim();});
+    nameInp.addEventListener('change',function(){
+      var v=nameInp.value.trim();
+      group.items.forEach(function(it){it.ref.name=v;});
+    });
     cell.appendChild(nameInp);
     var btnRow=document.createElement('div');
     btnRow.style.cssText='display:flex;gap:4px;';
     var replLabel=document.createElement('label');
     replLabel.className='btn btn-ghost btn-sm';
     replLabel.style.cssText='flex:1;text-align:center;cursor:pointer;padding:4px 2px;font-size:10px;position:relative;';
-    replLabel.textContent='교체';
+    replLabel.textContent=group.items.length>1?'전체교체':'교체';
     var replInp=document.createElement('input');
     replInp.type='file';replInp.accept='image/*';replInp.style.cssText='position:absolute;left:-9999px;';
     replInp.addEventListener('change',function(e){
@@ -1216,25 +1255,32 @@ function renderImgMgrPanel(){
       r.onload=function(ev){
         var mt=file.type||'image/jpeg';
         var ext=mt.includes('png')?'png':mt.includes('gif')?'gif':mt.includes('webp')?'webp':'jpg';
-        item.ref.b64=ev.target.result;item.ref.ext=ext;item.ref.mt=mt;
-        if(item.kind==='cover'){
-          var ct=document.getElementById('cover-thumb');
-          if(ct)ct.innerHTML='<img src="'+ev.target.result+'" style="width:100%;height:100%;object-fit:cover;border-radius:7px;" alt=""/>';
-        }
+        group.items.forEach(function(item){
+          item.ref.b64=ev.target.result;item.ref.ext=ext;item.ref.mt=mt;
+          if(item.kind==='cover'){
+            var ct=document.getElementById('cover-thumb');
+            if(ct)ct.innerHTML='<img src="'+ev.target.result+'" style="width:100%;height:100%;object-fit:cover;border-radius:7px;" alt=""/>';
+          }
+        });
         renderImgMgrPanel();renderImgPanel();renderCoverInsertList();
-        toast('이미지 교체됨','ok');
+        toast(group.items.length>1?(group.items.length+'곳 모두 교체됨'):'이미지 교체됨','ok');
       };r.readAsDataURL(file);e.target.value='';
     });
     replLabel.appendChild(replInp);btnRow.appendChild(replLabel);
     var delBtn=document.createElement('button');
     delBtn.className='btn btn-ghost btn-sm';
     delBtn.style.cssText='flex:1;padding:4px 2px;font-size:10px;color:var(--er);';
-    delBtn.textContent='삭제';
+    delBtn.textContent=group.items.length>1?'전체삭제':'삭제';
     delBtn.addEventListener('click',function(){
-      if(item.kind==='cover'){clearCover();}
-      else if(item.kind==='insert'){removeCoverInsert(item.idx);}
-      else{delete S.imgMap[item.key];renderImgPanel();}
-      renderImgMgrPanel();
+      // 인덱스가 뒤로 밀리지 않도록 insert 항목은 idx 역순으로 삭제
+      group.items.slice().sort(function(a,b){
+        return (b.kind==='insert'?b.idx:-1)-(a.kind==='insert'?a.idx:-1);
+      }).forEach(function(item){
+        if(item.kind==='cover'){S.coverData=null;var ct=document.getElementById('cover-thumb');if(ct)ct.innerHTML='📖';}
+        else if(item.kind==='insert'){S.coverInserts.splice(item.idx,1);}
+        else{delete S.imgMap[item.key];}
+      });
+      renderImgPanel();renderCoverInsertList();renderImgMgrPanel();
     });
     btnRow.appendChild(delBtn);
     cell.appendChild(btnRow);
@@ -2118,6 +2164,14 @@ function buildSegments(tmpC,titlePageToggle,fallbackTitle){
     return titlePageToggle?('<div class="pgbreak-before">'+html+'</div>'):html;
   }
   function carryTextLen(extra){return(carry+extra).replace(/<[^>]+>/g,'').trim().length;}
+  // 텍스트 없이 이미지만 있는 짧은 단락(회차 아이콘 등) 판별 — 이런 단락은 뒤에 오는 헤딩(다음 회차 제목) 바로 위에 붙어야 하므로,
+  // current(진행 중인 챕터)가 있어도 곧바로 붙이지 않고 일단 carry에 보류했다가, 다음이 헤딩이면 그 헤딩에 딸려보내고
+  // 다음이 헤딩이 아니면(=본문 중간에 낀 삽화) 그제서야 current에 합쳐 원래 위치를 그대로 유지한다.
+  function isIconUnit(u){
+    if(!u.hasImg)return false;
+    var txt=(u.html||'').replace(/<[^>]+>/g,'').trim();
+    return txt.length<=5;
+  }
   units.forEach(function(u){
     if(u.type==='heading'){
       closeCurrent();
@@ -2129,6 +2183,8 @@ function buildSegments(tmpC,titlePageToggle,fallbackTitle){
         // 새 헤딩 뒤 첫 본문 — 세그먼트 시작
         current={title:pendingTitle.text,html:pendingTitle.html+wrapPageBreak(carry+u.html)};
         carry='';pendingTitle=null;
+      }else if(isIconUnit(u)){
+        carry+=u.html;
       }else if(current){
         current.html+=carry+u.html;carry='';
       }else if(carryTextLen(u.html)>300){
@@ -2183,6 +2239,57 @@ function dedupeAndSortSegments(segments,log){
   }
   return order;
 }
+// [추가 기능] EPUB 생성 옵션을 화면에서 모아 makeChapters()에 넘길 opts 객체로 만든다.
+// buildEpub()과 openChapterPreview() 양쪽에서 재사용해 두 결과가 항상 일치하도록 한다.
+function gatherChapterOpts(){
+  function v(id){return document.getElementById(id).value.trim();}
+  return{
+    comment:document.getElementById('chk-comment').checked,
+    scene:document.getElementById('chk-style').checked,
+    scText:v('sc-text'),scColor:v('sc-hex'),scSize:v('sc-size'),scMargin:v('sc-margin'),
+    scUseColor:document.getElementById('chk-sc-color').checked,
+    hColor:v('h-hex'),
+    removeHr:document.getElementById('chk-remove-hr').checked
+  };
+}
+
+// [추가 기능] 표지를 제외하고, 실제 생성될 챕터들의 "제목 + 본문 앞부분"만 훑어볼 수 있는 미리보기.
+// makeChapters()를 그대로 재사용하므로 실제 빌드 결과와 동일한 챕터 분리·제목이 나온다.
+// (표지 삽입은 buildEpub()에서 makeChapters() 이후에 별도로 끼워넣으므로 여기서는 자연히 제외됨)
+function stripToPreviewText(html,maxLen){
+  var tmp=document.createElement('div');tmp.innerHTML=html;
+  var txt=(tmp.textContent||'').replace(/\s+/g,' ').trim();
+  return txt.length>maxLen?txt.slice(0,maxLen)+'…':txt;
+}
+function openChapterPreview(){
+  if(!S.files.length){toast('파일이 없습니다','err');return;}
+  var opts=gatherChapterOpts();
+  var chapters;
+  try{chapters=makeChapters(S.files,opts);}
+  catch(e){console.error(e);toast('미리보기 생성 중 오류: '+(e.message||String(e)),'err');return;}
+  var list=document.getElementById('preview-list');
+  list.innerHTML='';
+  chapters.forEach(function(ch,idx){
+    var row=document.createElement('div');
+    row.style.cssText='padding:10px 16px;border-bottom:1px solid var(--bd);';
+    var t=document.createElement('div');
+    t.style.cssText='font-weight:600;font-size:13px;color:var(--ac);margin-bottom:4px;';
+    t.textContent=(idx+1)+'. '+(ch.title||'(제목 없음)');
+    row.appendChild(t);
+    var snip=document.createElement('div');
+    snip.style.cssText='font-size:12px;color:var(--tx);line-height:1.65;';
+    var preview=stripToPreviewText(ch.content,220);
+    snip.textContent=preview||'(본문 없음 — 이미지만 있는 챕터일 수 있습니다)';
+    row.appendChild(snip);
+    list.appendChild(row);
+  });
+  document.getElementById('preview-count').textContent='표지 제외 '+chapters.length+'개 챕터';
+  document.getElementById('preview-modal').style.display='flex';
+}
+function closeChapterPreview(){
+  document.getElementById('preview-modal').style.display='none';
+}
+
 function makeChapters(files,opts){
   var titleOwnPageEl=document.getElementById('chk-title-own-page');
   var titlePageToggle=titleOwnPageEl?titleOwnPageEl.checked:false;
@@ -2272,13 +2379,9 @@ async function buildEpub(){
   try{
     var title=document.getElementById('title').value.trim()||'ebook';
     var author=document.getElementById('author').value.trim()||'';
-    var doComment=document.getElementById('chk-comment').checked;
     var doPurge=document.getElementById('chk-purge').checked;
-    var doStyle=document.getElementById('chk-style').checked;
     var doIndent=document.getElementById('chk-indent').checked;
-    var doRemoveHr=document.getElementById('chk-remove-hr').checked;
-    function v(id){return document.getElementById(id).value.trim();}
-    var opts={comment:doComment,scene:doStyle,scText:v('sc-text'),scColor:v('sc-hex'),scSize:v('sc-size'),scMargin:v('sc-margin'),scUseColor:document.getElementById('chk-sc-color').checked,hColor:v('h-hex'),removeHr:doRemoveHr};
+    var opts=gatherChapterOpts();
     prog(20,'챕터 처리...');await tick();
     var chapters=makeChapters(S.files,opts);
     // [추가 기능] 표지 삽입 — 지정한 회차 "앞"에 이미지 전용 페이지를 새로 만들어 끼워넣는다
