@@ -257,7 +257,14 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
           <div class="field"><label>제목</label><input type="text" id="title" placeholder="책 제목" oninput="this.dataset.userEdited='1';updateFilenamePreview()"/></div>
           <div class="field"><label>저자</label><input type="text" id="author" placeholder="저자 이름" oninput="this.dataset.userEdited='1';updateFilenamePreview()"/></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div class="field"><label>회차</label><input type="text" id="episode" placeholder="예) 1, 12, 외전1" oninput="updateFilenamePreview()"/></div>
+            <div class="field">
+              <label>회차/권수</label>
+              <div style="display:flex;gap:5px;">
+                <input type="text" id="episode" placeholder="예) 1-110화" style="flex:1;min-width:0;" oninput="this.dataset.userEdited='1';updateFilenamePreview()"/>
+                <button type="button" class="btn btn-ghost btn-sm" style="padding:0 8px;font-size:10px;white-space:nowrap;flex-shrink:0;" onclick="autoDetectEpisode()">🔍 자동</button>
+              </div>
+              <div id="episode-auto-hint" style="font-size:9px;color:var(--mu);font-family:'DM Mono',monospace;margin-top:3px;"></div>
+            </div>
             <div style="display:flex;flex-direction:column;gap:5px;">
               <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--mu);">완결</div>
               <div class="complete-row">
@@ -444,6 +451,27 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
         </div>
       </div>
 
+      <div id="imgsize-modal" style="display:none;position:fixed;inset:0;background:rgba(13,31,53,.55);z-index:210;align-items:center;justify-content:center;padding:16px;">
+        <div style="background:var(--surf);border-radius:12px;max-width:300px;width:100%;padding:18px;box-shadow:0 8px 30px rgba(0,0,0,.3);">
+          <div style="font-family:'DM Mono',monospace;font-size:13px;font-weight:600;color:var(--tx);margin-bottom:12px;">📏 이미지 크기</div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div>
+              <label style="font-size:11px;color:var(--mu);display:block;margin-bottom:3px;">너비 (px)</label>
+              <input type="number" id="imgsize-w" min="1" style="width:100%;padding:7px 9px;border:1.5px solid var(--bd);border-radius:7px;font-size:13px;background:var(--surf);color:var(--tx);"/>
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--mu);display:block;margin-bottom:3px;">높이 (px)</label>
+              <input type="number" id="imgsize-h" min="1" style="width:100%;padding:7px 9px;border:1.5px solid var(--bd);border-radius:7px;font-size:13px;background:var(--surf);color:var(--tx);"/>
+            </div>
+            <div style="font-size:10px;color:var(--mu);line-height:1.5;">이 이미지가 쓰인 모든 위치(<span id="imgsize-count">0</span>곳)에 동일하게 적용됩니다.</div>
+            <div style="display:flex;gap:6px;margin-top:6px;">
+              <button class="btn btn-ghost" style="flex:1;padding:8px;font-size:12px;" onclick="closeImgSizeModal()">취소</button>
+              <button class="btn btn-secondary" style="flex:1;padding:8px;font-size:12px;" onclick="applyImgSizeModal()">적용</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -536,7 +564,75 @@ function detectMissingChapters(labels){
 }
 
 // ══════════════════════════════════════════════════════════════
-// [추가 기능] 완결 여부 자동 감지
+// [추가 기능] 목차(실제 생성될 챕터 제목들) 기준으로 "회차/권수" 필드 자동 채움
+// 예) 1화~110화만 있으면 "1-110화" / 본편70+에필5+외전10이면 "1-85화 (에필/외전)"
+// makeChapters()가 만드는 최종 챕터 제목을 그대로 쓰므로 실제 빌드 결과와 항상 일치한다.
+// ══════════════════════════════════════════════════════════════
+function computeEpisodeSummary(){
+  if(!S.files.length)return null;
+  var opts=gatherChapterOpts();
+  var chapters;
+  try{chapters=makeChapters(S.files,opts);}catch(e){console.error(e);return null;}
+  var skipRe=/^(표지|cover|커버|판권|copyright|©|ⓒ)/i;
+  var titles=chapters.map(function(c){return String(c.title||'').normalize('NFC').trim();}).filter(function(t){return t&&!skipRe.test(t);});
+  if(titles.length<1)return null;
+  // 가장 많이 쓰인 단위(권/화/회/편/장)를 채택 — detectMissingChapters와 동일한 원칙
+  var byUnit={};
+  titles.forEach(function(t){
+    var re=/(\d+)\s*(권|부|화|회|편|장)/g,m;
+    while((m=re.exec(t))){(byUnit[m[2]]=byUnit[m[2]]||0);byUnit[m[2]]++;}
+  });
+  var unit='화',top=0;
+  Object.keys(byUnit).forEach(function(u){if(byUnit[u]>top){unit=u;top=byUnit[u];}});
+  var mainCount=0,epilogueCount=0,sideCount=0,etcCount=0;
+  var unitRe=new RegExp('\\d+\\s*'+unit);
+  titles.forEach(function(t){
+    if(/에필로그|에필/.test(t))epilogueCount++;
+    else if(/외전|번외/.test(t))sideCount++;
+    else if(unitRe.test(t))mainCount++;
+    else etcCount++;
+  });
+  var total=titles.length;
+  var tags=[];
+  if(epilogueCount)tags.push('에필');
+  if(sideCount)tags.push('외전');
+  var summary='1-'+total+unit+(tags.length?(' ('+tags.join('/')+')'):'');
+  return{summary:summary,total:total,unit:unit,mainCount:mainCount,epilogueCount:epilogueCount,sideCount:sideCount,etcCount:etcCount};
+}
+function renderEpisodeHint(info){
+  var hint=document.getElementById('episode-auto-hint');
+  if(!hint)return;
+  if(!info){hint.textContent='';return;}
+  var parts=['총 '+info.total+info.unit];
+  if(info.epilogueCount)parts.push('에필로그 '+info.epilogueCount+info.unit);
+  if(info.sideCount)parts.push('외전 '+info.sideCount+info.unit);
+  if(info.etcCount)parts.push('미분류 '+info.etcCount+info.unit);
+  hint.textContent='자동 감지 · '+parts.join(', ');
+}
+// 파일/목차가 바뀔 때마다 호출 — 사용자가 회차 필드를 직접 건드린 적 없으면만 자동으로 채운다
+function applyAutoEpisode(){
+  var epEl=document.getElementById('episode');
+  if(!epEl||epEl.dataset.userEdited==='1')return;
+  var info=computeEpisodeSummary();
+  if(!info)return;
+  epEl.value=info.summary;
+  renderEpisodeHint(info);
+  updateFilenamePreview();
+}
+// "🔍 자동" 버튼 — 사용자가 직접 눌렀을 때는 이전에 손으로 고쳤어도 무조건 다시 감지해서 덮어쓴다
+function autoDetectEpisode(){
+  if(!S.files.length){toast('파일이 없습니다','err');return;}
+  var info=computeEpisodeSummary();
+  if(!info){toast('회차 패턴을 인식하지 못했어요 — 목차 제목에 숫자+단위(화/권/회 등)가 있는지 확인해주세요','err');return;}
+  var epEl=document.getElementById('episode');
+  epEl.value=info.summary;
+  delete epEl.dataset.userEdited;
+  renderEpisodeHint(info);
+  updateFilenamePreview();
+  toast('회차 자동 감지됨','ok');
+}
+
+
 // 파일명 마지막 파일 / 본문 마지막 줄들에서 "완", "끝", "完", "-완-" 등의
 // 완결 마커를 찾는다. 사용자가 직접 체크박스를 건드린 적 있으면 자동 갱신 안 함.
 // ══════════════════════════════════════════════════════════════
@@ -718,7 +814,7 @@ async function addFiles(fl){
       S.files.push({name:file.name,text:text});added++;
     }
   }
-  if(added>0){renderList();renderToc();renderImgPanel();updateExtractedCssPreview();applyAutoTitleAuthor(archiveName);applyAutoCompletion();toast(added+'개 추가','ok');}
+  if(added>0){renderList();renderToc();renderImgPanel();updateExtractedCssPreview();applyAutoTitleAuthor(archiveName);applyAutoCompletion();applyAutoEpisode();toast(added+'개 추가','ok');}
   }finally{addFilesLock=false;}
 }
 
@@ -786,7 +882,7 @@ function addPastedText(){
   });
   ta.value='';
   document.getElementById('paste-box').style.display='none';
-  if(added>0){renderList();renderToc();renderImgPanel();updateExtractedCssPreview();applyAutoTitleAuthor();applyAutoCompletion();toast(added+'개 챕터 추가됨','ok');}
+  if(added>0){renderList();renderToc();renderImgPanel();updateExtractedCssPreview();applyAutoTitleAuthor();applyAutoCompletion();applyAutoEpisode();toast(added+'개 챕터 추가됨','ok');}
 }
 
 function togglePasteBox(){
@@ -981,7 +1077,7 @@ function renderToc(){
         reindexImgMapAfterDelete(idx);
         Object.keys(S.tocOverrides).forEach(function(k){var ki=parseInt(k);if(ki<idx)newToc[ki]=S.tocOverrides[ki];else if(ki>idx)newToc[ki-1]=S.tocOverrides[ki];});
         S.tocOverrides=newToc;
-        S.files.splice(idx,1);renderList();renderToc();renderImgPanel();if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();applyAutoCompletion();toast('챕터 삭제됨','ok');
+        S.files.splice(idx,1);renderList();renderToc();renderImgPanel();if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();applyAutoCompletion();applyAutoEpisode();toast('챕터 삭제됨','ok');
       });
     })(i);
     row.appendChild(del);
@@ -1180,6 +1276,66 @@ function b64SizeBytes(durl){
 }
 function fmtKB(bytes){return (bytes/1024).toFixed(1)+' KB';}
 
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 본문 삽화 <img> 태그에 원본에서부터 박혀 있는 인라인 px 크기(예: 카카오페이지
+// 뷰어가 넣은 style="width:80.29px;height:73.17px")를 읽고 고쳐 쓴다.
+// 표지·중간표지는 항상 페이지에 꽉 차게(max-width:100%) 렌더링되므로 이 기능은 본문 삽화(inline)에만 의미가 있다.
+// ══════════════════════════════════════════════════════════════
+function getFileImgList(fileIdx){
+  var f=S.files[fileIdx];
+  if(!f||!f.text)return[];
+  var tmp=document.createElement('div');tmp.innerHTML=f.text;
+  return Array.from(tmp.querySelectorAll('img'));
+}
+function readImgSize(fileIdx,imgPos){
+  var el=getFileImgList(fileIdx)[imgPos];
+  if(!el)return null;
+  var w=(el.style&&el.style.width)?parseFloat(el.style.width):(el.getAttribute('width')?parseFloat(el.getAttribute('width')):null);
+  var h=(el.style&&el.style.height)?parseFloat(el.style.height):(el.getAttribute('height')?parseFloat(el.getAttribute('height')):null);
+  return(w||h)?{width:w,height:h}:null;
+}
+function writeImgSize(fileIdx,imgPos,width,height){
+  var f=S.files[fileIdx];
+  if(!f||!f.text)return false;
+  var tmp=document.createElement('div');tmp.innerHTML=f.text;
+  var el=Array.from(tmp.querySelectorAll('img'))[imgPos];
+  if(!el)return false;
+  if(width)el.style.width=width+'px';
+  if(height)el.style.height=height+'px';
+  el.removeAttribute('width');el.removeAttribute('height');
+  f.text=tmp.innerHTML;
+  return true;
+}
+var imgSizeModalGroup=null;
+function openImgSizeModal(group){
+  var inlineItems=group.items.filter(function(it){return it.kind==='inline';});
+  if(!inlineItems.length){toast('표지·중간표지는 항상 페이지에 꽉 차게 표시돼서 크기를 개별 조정할 수 없어요','err');return;}
+  imgSizeModalGroup=group;
+  var parts=inlineItems[0].key.split('_');
+  var fileIdx=parseInt(parts[0],10),imgPos=parseInt(parts[1],10);
+  var size=readImgSize(fileIdx,imgPos);
+  document.getElementById('imgsize-w').value=(size&&size.width)?Math.round(size.width):'';
+  document.getElementById('imgsize-h').value=(size&&size.height)?Math.round(size.height):'';
+  document.getElementById('imgsize-count').textContent=inlineItems.length;
+  document.getElementById('imgsize-modal').style.display='flex';
+}
+function closeImgSizeModal(){document.getElementById('imgsize-modal').style.display='none';imgSizeModalGroup=null;}
+function applyImgSizeModal(){
+  if(!imgSizeModalGroup)return;
+  var w=parseFloat(document.getElementById('imgsize-w').value)||null;
+  var h=parseFloat(document.getElementById('imgsize-h').value)||null;
+  if(!w&&!h){toast('너비 또는 높이를 입력해주세요','err');return;}
+  var inlineItems=imgSizeModalGroup.items.filter(function(it){return it.kind==='inline';});
+  var applied=0;
+  inlineItems.forEach(function(it){
+    var parts=it.key.split('_');
+    var fileIdx=parseInt(parts[0],10),imgPos=parseInt(parts[1],10);
+    if(writeImgSize(fileIdx,imgPos,w,h))applied++;
+  });
+  closeImgSizeModal();
+  toast(applied+'곳에 크기 적용됨','ok');
+}
+
 function collectImgMgrItems(){
   var items=[];
   if(S.coverData)items.push({kind:'cover',ref:S.coverData,label:S.coverData.name||'표지'});
@@ -1220,8 +1376,17 @@ function renderImgMgrPanel(){
     var cell=document.createElement('div');
     cell.style.cssText='display:flex;flex-direction:column;gap:5px;padding:7px;background:var(--s2);border:1px solid var(--bd);border-radius:8px;';
     var thumb=document.createElement('div');
-    thumb.style.cssText='width:100%;aspect-ratio:3/4;border-radius:6px;overflow:hidden;background:var(--surf);position:relative;';
+    thumb.style.cssText='width:100%;aspect-ratio:3/4;border-radius:6px;overflow:hidden;background:var(--surf);position:relative;cursor:pointer;';
+    thumb.title='클릭해서 이미지 크기 보기/수정';
     thumb.innerHTML='<img src="'+primary.ref.b64+'" style="width:100%;height:100%;object-fit:cover;" alt=""/>';
+    var hasInline=group.items.some(function(it){return it.kind==='inline';});
+    if(hasInline){
+      var sizeIcon=document.createElement('span');
+      sizeIcon.style.cssText='position:absolute;bottom:3px;left:3px;background:rgba(13,31,53,.65);color:#fff;font-size:10px;padding:1px 5px;border-radius:5px;';
+      sizeIcon.textContent='📏';
+      thumb.appendChild(sizeIcon);
+    }
+    (function(g){thumb.addEventListener('click',function(){openImgSizeModal(g);});})(group);
     if(group.items.length>1){
       var badge=document.createElement('span');
       badge.style.cssText='position:absolute;top:3px;right:3px;background:var(--ac);color:#fff;font-size:9px;font-family:\'DM Mono\',monospace;padding:1px 5px;border-radius:20px;';
@@ -1555,7 +1720,7 @@ function deleteCheckedCoverCleanItems(){
     S.files.splice(idx,1);
   });
   document.getElementById('cover-clean-select-all').checked=false;
-  renderList();renderToc();renderImgPanel();applyAutoCompletion();
+  renderList();renderToc();renderImgPanel();applyAutoCompletion();applyAutoEpisode();
   openCoverCleanPanel(true); // 남은 표지/판권 항목이 있으면 패널을 갱신해서 계속 보여주고, 없으면 자동으로 숨겨짐
   toast(checkedRows.length+'개 항목 정리됨','ok');
 }
@@ -2215,26 +2380,45 @@ function buildSegments(tmpC,titlePageToggle,fallbackTitle){
 // 번호를 못 찾는 세그먼트(프롤로그 등)가 하나라도 있으면 순서는 원본 그대로 둔다 — 잘못 재배치될 위험 방지.
 function dedupeAndSortSegments(segments,log){
   if(segments.length<=1)return segments;
-  var seen={},order=[],allNumbered=true,groups={};
+  // 본편/외전/에필로그/프롤로그는 번호가 각자 1부터 다시 시작하는 경우가 매우 흔하다(예: 본편 1~70화 + 외전 1~10화).
+  // 그런데 기존 로직은 제목에서 숫자만 뽑아 키로 썼기 때문에 "1화"와 "외전 1화"를 같은 회차로 오인해
+  // 둘 중 하나를 중복으로 간주하고 지워버리는 문제가 있었다. 카테고리까지 함께 키로 묶어서 방지한다.
+  function segCategory(title){
+    var t=String(title||'');
+    if(/에필로그|에필/.test(t))return'epilogue';
+    if(/외전|번외/.test(t))return'side';
+    if(/프롤로그/.test(t))return'prologue';
+    return'main';
+  }
+  var seen={},order=[],allNumbered=true,allSameCategory=true,firstCat=null,groups={};
   segments.forEach(function(seg){
     var n=extractNum(seg.title);
+    var cat=segCategory(seg.title);
+    if(firstCat===null)firstCat=cat;else if(cat!==firstCat)allSameCategory=false;
     if(n===null){allNumbered=false;order.push(seg);return;}
-    (groups[n]=groups[n]||[]).push((seg.html||'').length);
-    if(!(n in seen)){seen[n]=seg;order.push(seg);}
-    else if((seg.html||'').length>(seen[n].html||'').length){
+    var key=cat+'_'+n;
+    (groups[key]=groups[key]||[]).push((seg.html||'').length);
+    if(!(key in seen)){seen[key]=seg;order.push(seg);}
+    else if((seg.html||'').length>(seen[key].html||'').length){
       // 더 길고 완전한 버전으로 교체 (order 배열 속 자리도 함께 갱신)
-      var idx=order.indexOf(seen[n]);if(idx>=0)order[idx]=seg;
-      seen[n]=seg;
+      var idx=order.indexOf(seen[key]);if(idx>=0)order[idx]=seg;
+      seen[key]=seg;
     }
   });
   // 중복이 있었던 회차 기록 — 어떤 게 지워졌는지 나중에 화면에 보여주기 위함
   // (길이가 서로 다르면 캡처가 잘렸을 가능성이 있으니 사용자가 직접 확인하도록)
   if(log){
-    Object.keys(groups).forEach(function(n){
-      if(groups[n].length>1)log.push({num:n,title:seen[n].title,count:groups[n].length,keptLen:(seen[n].html||'').length,allLens:groups[n]});
+    Object.keys(groups).forEach(function(key){
+      if(groups[key].length>1){
+        var seg=seen[key];
+        log.push({num:key,title:seg.title,count:groups[key].length,keptLen:(seg.html||'').length,allLens:groups[key]});
+      }
     });
   }
-  if(allNumbered){
+  // 본편/외전/에필로그가 한 파일에 섞여 있는 상태에서 번호만 보고 전체를 재정렬하면
+  // (예: 외전 3화가 본편 3화 자리로 끼어드는 등) 오히려 순서가 망가질 수 있어,
+  // 세그먼트 전체가 같은 카테고리일 때만 번호 순 재정렬을 적용한다.
+  if(allNumbered&&allSameCategory){
     order.sort(function(a,b){return extractNum(a.title)-extractNum(b.title);});
   }
   return order;
