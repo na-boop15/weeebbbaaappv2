@@ -442,7 +442,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
     const classSelMatches = cssText.match(/\.[a-zA-Z_][\w-]*\s*\{/g) || [];
     const customClassCount = new Set(classSelMatches.map(m=>m.trim())).size;
-    const classPropsMap = parseCssClasses(cssText);
+    const classPropsMap = parseCssClasses(cssText.replace(/\/\*[\s\S]*?\*\//g, ''));
     const candidateDistinctiveClasses = Object.keys(classPropsMap).filter(cls =>
       (classPropsMap[cls].italic || classPropsMap[cls].bold || classPropsMap[cls].colorful) && !UTILITY_CLASS_RE.test(cls));
 
@@ -551,8 +551,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       }
 
       // 챕터 제목(h태그)이 파일 맨 앞이 아니라 본문 중간에 있는지 (여러 화가 한 파일에 뭉쳐있을 가능성)
-      // 헤딩이 2개 이상이어도 전부 문서 맨 앞(제목+소제목 구조 등)에 몰려 있으면 정상이므로,
-      // "마지막 헤딩이 문서 중반 이후에 위치하는지"만으로 판단한다.
+      // 파일 전체 길이 대비 "비율"로 판단하면, 제목만 담긴 짧은 페이지(뒤에 내용이 거의 없는 경우)에서
+      // 헤딩이 상대적으로 "뒤쪽"처럼 계산되는 착시가 생긴다. 그래서 비율이 아니라
+      // "마지막 헤딩 앞에 실제 텍스트가 얼마나 있는지"(절대 글자수)로 판단한다.
       // 단, 장면전환 기호(***, ---- 등)를 <h4> 같은 제목 태그로 감싸 표시하는 스타일도 있어서
       // 헤딩 내용이 장면전환 패턴이면 "챕터 제목"으로 취급하지 않는다.
       const bodyHtml = html.slice(html.toLowerCase().indexOf('<body'));
@@ -561,8 +562,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       if(headingMatches.length > 0){
         headingCheckedFiles++;
         const lastPos = headingMatches[headingMatches.length-1].index;
-        const ratio = bodyHtml.length ? lastPos / bodyHtml.length : 0;
-        if(ratio > 0.15){
+        const beforeText = bodyHtml.slice(0, lastPos).replace(/<[^>]+>/g,' ').replace(/&nbsp;|&#160;/gi,' ').replace(/\s+/g,' ').trim();
+        if(beforeText.length > 300){
           misplacedHeadingHits++;
         }
       }
@@ -654,7 +655,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       `목차 ${navEntries.length}개 중 ${genericLabelCount}개가 기본 패턴/파일명과 일치`);
     flag('no_toc', '목차(TOC)가 아예 없음', navEntries.length===0 && spineHrefEntries.length>=3, 16,
       `목차 항목 0개 (챕터 파일 ${spineHrefEntries.length}개)`);
-    flag('incomplete_toc', '목차가 있으나 전체 챕터에 비해 턱없이 부족함 (시작 지점 정도만 있음)', spineHrefEntries.length>=5 && navEntries.length>0 && navEntries.length < spineHrefEntries.length*0.5, 14,
+    flag('incomplete_toc', '목차가 있으나 전체 챕터에 비해 턱없이 부족함 (시작 지점 정도만 있음)', spineHrefEntries.length>=5 && navEntries.length>0 && navEntries.length < spineHrefEntries.length*0.35, 14,
       `목차 ${navEntries.length}개 / 챕터 파일 ${spineHrefEntries.length}개`);
 
     flag('chapter_heading_misplaced', '챕터 제목이 파일 맨 앞이 아니라 본문 중간에 위치함 (여러 화가 한 파일에 뭉쳐 있을 가능성)',
