@@ -374,7 +374,7 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
               <div class="sek-row"><label>크기 (em)</label><input type="text" id="sc-size" value="1.1"/></div>
             </div>
             <div class="tog-row" style="padding:6px 0 2px;">
-              <div class="tog-info"><div class="tl" style="font-size:12px;">색상 별도 지정</div><div class="td">해제 시 H 태그와 같은 색상 적용</div></div>
+              <div class="tog-info"><div class="tl" style="font-size:12px;">색상 별도 지정</div><div class="td">해제 시 원본 문서에서 감지한 H 태그 색상을 따라감(감지 실패 시 아래 H 태그 색상)</div></div>
               <label class="tog"><input type="checkbox" id="chk-sc-color" onchange="toggleScColor(this)"/><span class="tog-sl"></span></label>
             </div>
             <div style="margin-top:4px;">
@@ -397,9 +397,15 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
               <div class="sek-row"><label>위 마진 (em)</label><input type="text" id="h-mt" value="1.5" style="width:100%;padding:5px 6px;border:1.5px solid var(--bd);border-radius:6px;font-size:11px;font-family:'DM Mono',monospace;background:var(--surf);color:var(--tx);outline:none;"/></div>
               <div class="sek-row"><label>색상</label>
                 <div style="display:flex;gap:5px;align-items:center;">
-                  <input type="color" id="h-color" value="#1a1410" oninput="syncHex('h-color','h-hex')" style="width:32px;height:28px;padding:2px;border:1.5px solid var(--bd);border-radius:6px;cursor:pointer;flex-shrink:0;"/>
-                  <input type="text" id="h-hex" value="#1a1410" oninput="syncColor('h-hex','h-color')" style="width:76px;padding:5px 6px;border:1.5px solid var(--bd);border-radius:6px;font-size:11px;font-family:'DM Mono',monospace;background:var(--surf);color:var(--tx);outline:none;"/>
+                  <input type="color" id="h-color" value="#1a1410" oninput="syncHex('h-color','h-hex');document.getElementById('chk-h-orig-color').checked=false;" style="width:32px;height:28px;padding:2px;border:1.5px solid var(--bd);border-radius:6px;cursor:pointer;flex-shrink:0;"/>
+                  <input type="text" id="h-hex" value="#1a1410" oninput="syncColor('h-hex','h-color');document.getElementById('chk-h-orig-color').checked=false;" style="width:76px;padding:5px 6px;border:1.5px solid var(--bd);border-radius:6px;font-size:11px;font-family:'DM Mono',monospace;background:var(--surf);color:var(--tx);outline:none;"/>
                 </div>
+              </div>
+              <div class="sek-row" style="grid-column:1/-1;">
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--tx);cursor:pointer;">
+                  <input type="checkbox" id="chk-h-orig-color" style="width:auto;"/> 원본 색 사용 (체크 시 위 색상 대신 원본 문서에서 감지한 H 태그 색을 적용)
+                </label>
+                <div id="h-orig-color-hint" style="font-size:10px;color:var(--mu);font-family:'DM Mono',monospace;margin-top:3px;"></div>
               </div>
               <div class="sek-row"><label>아래 마진 (em)</label><input type="text" id="h-mb" value="6" style="width:100%;padding:5px 6px;border:1.5px solid var(--bd);border-radius:6px;font-size:11px;font-family:'DM Mono',monospace;background:var(--surf);color:var(--tx);outline:none;"/></div>
               <div class="sek-row"><label>정렬</label>
@@ -574,9 +580,36 @@ function computeEpisodeSummary(){
   var chapters;
   try{chapters=makeChapters(S.files,opts);}catch(e){console.error(e);return null;}
   var skipRe=/^(표지|cover|커버|판권|copyright|©|ⓒ)/i;
+  function segCategory(label){
+    var t=String(label||'');
+    if(/에필로그|에필/.test(t))return'epilogue';
+    if(/외전|번외/.test(t))return'side';
+    return'main';
+  }
+  function summarize(labels,unit){
+    var mainCount=0,epilogueCount=0,sideCount=0;
+    labels.forEach(function(t){
+      var cat=segCategory(t);
+      if(cat==='epilogue')epilogueCount++;else if(cat==='side')sideCount++;else mainCount++;
+    });
+    var total=labels.length;
+    var tags=[];
+    if(epilogueCount)tags.push('에필');
+    if(sideCount)tags.push('외전');
+    return{summary:'1-'+total+unit+(tags.length?(' ('+tags.join('/')+')'):''),total:total,unit:unit,mainCount:mainCount,epilogueCount:epilogueCount,sideCount:sideCount,etcCount:0};
+  }
+  // 계층 목차(파일 하나가 여러 회차로 쪼개져 원본 파일명이 상위 '권' 라벨로 묶인 구조) 감지 —
+  // 이런 구조면 화(chapter) 개수가 아니라 상위 권 라벨 개수를 기준으로 삼는다.
+  var volumeLabels=[],seenVol={};
+  chapters.forEach(function(c){
+    if(c.parentLabel&&!skipRe.test(c.parentLabel)&&!(c.parentLabel in seenVol)){
+      seenVol[c.parentLabel]=true;volumeLabels.push(c.parentLabel);
+    }
+  });
+  if(volumeLabels.length>=2)return summarize(volumeLabels,'권');
+  // 계층 구조가 아니면 기존처럼 화(챕터 제목) 단위로 집계
   var titles=chapters.map(function(c){return String(c.title||'').normalize('NFC').trim();}).filter(function(t){return t&&!skipRe.test(t);});
   if(titles.length<1)return null;
-  // 가장 많이 쓰인 단위(권/화/회/편/장)를 채택 — detectMissingChapters와 동일한 원칙
   var byUnit={};
   titles.forEach(function(t){
     var re=/(\d+)\s*(권|부|화|회|편|장)/g,m;
@@ -584,20 +617,7 @@ function computeEpisodeSummary(){
   });
   var unit='화',top=0;
   Object.keys(byUnit).forEach(function(u){if(byUnit[u]>top){unit=u;top=byUnit[u];}});
-  var mainCount=0,epilogueCount=0,sideCount=0,etcCount=0;
-  var unitRe=new RegExp('\\d+\\s*'+unit);
-  titles.forEach(function(t){
-    if(/에필로그|에필/.test(t))epilogueCount++;
-    else if(/외전|번외/.test(t))sideCount++;
-    else if(unitRe.test(t))mainCount++;
-    else etcCount++;
-  });
-  var total=titles.length;
-  var tags=[];
-  if(epilogueCount)tags.push('에필');
-  if(sideCount)tags.push('외전');
-  var summary='1-'+total+unit+(tags.length?(' ('+tags.join('/')+')'):'');
-  return{summary:summary,total:total,unit:unit,mainCount:mainCount,epilogueCount:epilogueCount,sideCount:sideCount,etcCount:etcCount};
+  return summarize(titles,unit);
 }
 function renderEpisodeHint(info){
   var hint=document.getElementById('episode-auto-hint');
@@ -754,10 +774,10 @@ function validateEpubBeforeBuild(chapters,title,coverData){
 }
 
 var tTimer;
-function toast(msg,type){
+function toast(msg,type,duration){
   var el=document.getElementById('toast');
   el.textContent=msg;el.className='show '+(type||'');
-  clearTimeout(tTimer);tTimer=setTimeout(function(){el.className='';},2600);
+  clearTimeout(tTimer);tTimer=setTimeout(function(){el.className='';},duration||2600);
 }
 
 function prog(pct,lbl){
@@ -814,7 +834,7 @@ async function addFiles(fl){
       S.files.push({name:file.name,text:text});added++;
     }
   }
-  if(added>0){renderList();renderToc();renderImgPanel();updateExtractedCssPreview();applyAutoTitleAuthor(archiveName);applyAutoCompletion();applyAutoEpisode();toast(added+'개 추가','ok');}
+  if(added>0){renderList();renderToc();renderImgPanel();updateExtractedCssPreview();applyAutoTitleAuthor(archiveName);applyAutoCompletion();applyAutoEpisode();refreshDetectedHColor();toast(added+'개 추가','ok');}
   }finally{addFilesLock=false;}
 }
 
@@ -882,7 +902,7 @@ function addPastedText(){
   });
   ta.value='';
   document.getElementById('paste-box').style.display='none';
-  if(added>0){renderList();renderToc();renderImgPanel();updateExtractedCssPreview();applyAutoTitleAuthor();applyAutoCompletion();applyAutoEpisode();toast(added+'개 챕터 추가됨','ok');}
+  if(added>0){renderList();renderToc();renderImgPanel();updateExtractedCssPreview();applyAutoTitleAuthor();applyAutoCompletion();applyAutoEpisode();refreshDetectedHColor();toast(added+'개 챕터 추가됨','ok');}
 }
 
 function togglePasteBox(){
@@ -1077,7 +1097,7 @@ function renderToc(){
         reindexImgMapAfterDelete(idx);
         Object.keys(S.tocOverrides).forEach(function(k){var ki=parseInt(k);if(ki<idx)newToc[ki]=S.tocOverrides[ki];else if(ki>idx)newToc[ki-1]=S.tocOverrides[ki];});
         S.tocOverrides=newToc;
-        S.files.splice(idx,1);renderList();renderToc();renderImgPanel();if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();applyAutoCompletion();applyAutoEpisode();toast('챕터 삭제됨','ok');
+        S.files.splice(idx,1);renderList();renderToc();renderImgPanel();if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();applyAutoCompletion();applyAutoEpisode();refreshDetectedHColor();toast('챕터 삭제됨','ok');
       });
     })(i);
     row.appendChild(del);
@@ -1720,7 +1740,7 @@ function deleteCheckedCoverCleanItems(){
     S.files.splice(idx,1);
   });
   document.getElementById('cover-clean-select-all').checked=false;
-  renderList();renderToc();renderImgPanel();applyAutoCompletion();applyAutoEpisode();
+  renderList();renderToc();renderImgPanel();applyAutoCompletion();applyAutoEpisode();refreshDetectedHColor();
   openCoverCleanPanel(true); // 남은 표지/판권 항목이 있으면 패널을 갱신해서 계속 보여주고, 없으면 자동으로 숨겨짐
   toast(checkedRows.length+'개 항목 정리됨','ok');
 }
@@ -1964,7 +1984,7 @@ function processContent(raw,opts){
   }
   if(opts.scene){
     var scTxt=(opts.scText!==undefined)?opts.scText:'✦ ✦ ✦';
-    var scColor=opts.scUseColor?(opts.scColor||'#888888'):(opts.hColor||'#1a1410');
+    var scColor=opts.scUseColor?(opts.scColor||'#888888'):(opts.hOrigColor||opts.hColor||'#1a1410');
     var scSize=opts.scSize||'1.1';var scMargin=opts.scMargin||'2';
     // 카카오페이지 등에서 복사한 '<div ...>* * *</div>' 형태의 구분선을 p로 통일
     content=content.replace(/<div\b[^>]*>\s*(\*(?:\s*\*){2,})\s*<\/div>/g,'<p>$1</p>');
@@ -1990,7 +2010,9 @@ function processContent(raw,opts){
 function buildCustomCss(){
   function v(id){return document.getElementById(id).value.trim();}
   var align=document.getElementById('h-align').value;
-  var css='h1,h2,h3{font-size:'+v('h-size')+'em !important;color:'+v('h-hex')+' !important;margin-top:'+v('h-mt')+'em !important;margin-bottom:'+v('h-mb')+'em !important;text-align:'+align+' !important;}';
+  var useOrig=document.getElementById('chk-h-orig-color')&&document.getElementById('chk-h-orig-color').checked;
+  var hColorVal=(useOrig&&S.detectedHColor)?S.detectedHColor:v('h-hex');
+  var css='h1,h2,h3{font-size:'+v('h-size')+'em !important;color:'+hColorVal+' !important;margin-top:'+v('h-mt')+'em !important;margin-bottom:'+v('h-mb')+'em !important;text-align:'+align+' !important;}';
   if(document.getElementById('chk-body-margin').checked){
     var bm=v('body-margin')||'0',lh=v('body-lh')||'1.75',pt=v('body-pt')||'0.6',pb=v('body-pb')||'1.4';
     css+='body{line-height:'+lh+' !important;margin-left:'+bm+'em !important;margin-right:'+bm+'em !important;}p{margin-top:'+pt+'em !important;margin-bottom:'+pb+'em !important;}';
@@ -2121,6 +2143,35 @@ function extractStylesFromFiles(files){
   atRules.forEach(function(r){out+=r.raw+'\n';});
   regular.forEach(function(r){out+=r.sel+' { '+r.body+' }\n';});
   return out;
+}
+
+// ══════════════════════════════════════════════════════════════
+// [추가 기능] 원본 문서에 이미 박혀 있던 H1~H3 색상을 감지한다.
+// extractStylesFromFiles()가 뽑아낸 원본 <style> 규칙 중 h1(또는 h1,h2,h3 등) 선택자의
+// color 값을 찾는다 — 스타일 커스터마이저의 "원본 색 사용" 체크박스와, 장면전환 색상이
+// 별도 지정 없을 때 따라갈 기본값으로 쓰인다.
+// ══════════════════════════════════════════════════════════════
+function detectHeadingColor(){
+  if(!S.files||!S.files.length)return null;
+  var extracted=extractStylesFromFiles(S.files);
+  if(!extracted)return null;
+  var re=/([^{}\n]*\bh1\b[^{}\n]*)\{([^{}]*)\}/gi,m;
+  while((m=re.exec(extracted))){
+    var body=m[2];
+    var cm=body.match(/(?:^|;)\s*color\s*:\s*([^;]+)/i);
+    if(cm){
+      var c=cm[1].trim();
+      if(c&&!/^(inherit|transparent|initial|unset|currentcolor)$/i.test(c))return c;
+    }
+  }
+  return null;
+}
+// 파일이 바뀔 때마다 호출 — 감지 결과를 S.detectedHColor에 저장하고 힌트 텍스트를 갱신한다
+function refreshDetectedHColor(){
+  S.detectedHColor=detectHeadingColor();
+  var hint=document.getElementById('h-orig-color-hint');
+  if(!hint)return;
+  hint.textContent=S.detectedHColor?('원본에서 감지: '+S.detectedHColor):'원본 색상을 감지하지 못했어요(체크해도 아래 색상이 적용됩니다)';
 }
 
 function updateExtractedCssPreview(){
@@ -2390,34 +2441,55 @@ function dedupeAndSortSegments(segments,log){
     if(/프롤로그/.test(t))return'prologue';
     return'main';
   }
-  var seen={},order=[],allNumbered=true,allSameCategory=true,firstCat=null,groups={};
-  segments.forEach(function(seg){
-    var n=extractNum(seg.title);
-    var cat=segCategory(seg.title);
-    if(firstCat===null)firstCat=cat;else if(cat!==firstCat)allSameCategory=false;
-    if(n===null){allNumbered=false;order.push(seg);return;}
-    var key=cat+'_'+n;
-    (groups[key]=groups[key]||[]).push((seg.html||'').length);
-    if(!(key in seen)){seen[key]=seg;order.push(seg);}
-    else if((seg.html||'').length>(seen[key].html||'').length){
-      // 더 길고 완전한 버전으로 교체 (order 배열 속 자리도 함께 갱신)
-      var idx=order.indexOf(seen[key]);if(idx>=0)order[idx]=seg;
-      seen[key]=seg;
+  // 북마클릿으로 긴 글을 캡처할 때 스크롤 도중 보고 있던 회차가 표지 바로 뒤 같은 엉뚱한 위치에
+  // 한 번 더 끼어드는 경우가 있다(예: 79화가 표지 다음·50화 앞에 잘못 끼어들고, 78화~80화 사이에도
+  // 정상적으로 한 번 더 나옴). 이런 경우 글자 수만으로는 어느 쪽이 "진짜 위치"인지 판단할 수 없으므로,
+  // 같은 카테고리 안에서 바로 앞/뒤 회차 번호와 비교해 순서가 안 맞는 쪽을 우선 탈락시킨다.
+  var withNum=segments.map(function(seg){return{seg:seg,num:extractNum(seg.title),cat:segCategory(seg.title)};});
+  function nearestNum(idx,dir,cat){
+    var i=idx+dir;
+    while(i>=0&&i<withNum.length){
+      if(withNum[i].num!==null&&withNum[i].cat===cat)return withNum[i].num;
+      i+=dir;
     }
-  });
-  // 중복이 있었던 회차 기록 — 어떤 게 지워졌는지 나중에 화면에 보여주기 위함
-  // (길이가 서로 다르면 캡처가 잘렸을 가능성이 있으니 사용자가 직접 확인하도록)
-  if(log){
-    Object.keys(groups).forEach(function(key){
-      if(groups[key].length>1){
-        var seg=seen[key];
-        log.push({num:key,title:seg.title,count:groups[key].length,keptLen:(seg.html||'').length,allLens:groups[key]});
-      }
-    });
+    return null;
   }
+  var groupIdx={};
+  withNum.forEach(function(item,idx){
+    if(item.num===null)return;
+    var key=item.cat+'_'+item.num;
+    (groupIdx[key]=groupIdx[key]||[]).push(idx);
+  });
+  var dropIdx={},dupLog=[];
+  Object.keys(groupIdx).forEach(function(key){
+    var idxs=groupIdx[key];
+    if(idxs.length<=1)return;
+    var candidates=idxs.map(function(idx){
+      var item=withNum[idx];
+      var prev=nearestNum(idx,-1,item.cat),next=nearestNum(idx,1,item.cat);
+      var outOfOrder=(prev!==null&&item.num<prev)||(next!==null&&item.num>next);
+      return{idx:idx,outOfOrder:outOfOrder,len:(item.seg.html||'').length};
+    });
+    var inOrder=candidates.filter(function(c){return !c.outOfOrder;});
+    var pool=inOrder.length?inOrder:candidates; // 전부 순서가 안 맞으면 어쩔 수 없이 전체 후보에서 고른다
+    pool=pool.slice().sort(function(a,b){return b.len-a.len;}); // 순서가 맞는 게 여러 개면(진짜 캡처 중복) 글자 수로 폴백
+    var keepIdx=pool[0].idx;
+    idxs.forEach(function(idx){if(idx!==keepIdx)dropIdx[idx]=true;});
+    dupLog.push({num:key,title:withNum[idxs[0]].seg.title,count:idxs.length,keptLen:(withNum[keepIdx].seg.html||'').length,allLens:idxs.map(function(i){return(withNum[i].seg.html||'').length;})});
+  });
+  var order=[];
+  withNum.forEach(function(item,idx){if(!dropIdx[idx])order.push(item.seg);});
+  // 중복이 있었던 회차 기록 — 어떤 게 지워졌는지 나중에 화면에 보여주기 위함
+  if(log)dupLog.forEach(function(d){log.push(d);});
   // 본편/외전/에필로그가 한 파일에 섞여 있는 상태에서 번호만 보고 전체를 재정렬하면
   // (예: 외전 3화가 본편 3화 자리로 끼어드는 등) 오히려 순서가 망가질 수 있어,
   // 세그먼트 전체가 같은 카테고리일 때만 번호 순 재정렬을 적용한다.
+  var allNumbered=true,allSameCategory=true,firstCat=null;
+  order.forEach(function(seg){
+    if(extractNum(seg.title)===null)allNumbered=false;
+    var cat=segCategory(seg.title);
+    if(firstCat===null)firstCat=cat;else if(cat!==firstCat)allSameCategory=false;
+  });
   if(allNumbered&&allSameCategory){
     order.sort(function(a,b){return extractNum(a.title)-extractNum(b.title);});
   }
@@ -2433,6 +2505,7 @@ function gatherChapterOpts(){
     scText:v('sc-text'),scColor:v('sc-hex'),scSize:v('sc-size'),scMargin:v('sc-margin'),
     scUseColor:document.getElementById('chk-sc-color').checked,
     hColor:v('h-hex'),
+    hOrigColor:S.detectedHColor||null,
     removeHr:document.getElementById('chk-remove-hr').checked
   };
 }
@@ -2556,6 +2629,23 @@ function makeChapters(files,opts){
   return result;
 }
 
+// [추가 기능] 빌드가 끝났을 때 실제로 어떤 옵션이 적용됐는지 한눈에 확인할 수 있도록 요약 문구를 만든다
+function describeAppliedOptions(opts,doIndent,doPurge){
+  var parts=[];
+  if(doIndent){
+    var indentSize=(document.getElementById('indent-size').value||'').trim()||'1';
+    parts.push('들여쓰기 '+indentSize+'em');
+  }
+  if(opts.removeHr)parts.push('hr 제거');
+  if(opts.comment)parts.push('괄호주석');
+  if(opts.scene)parts.push('장면전환 스타일');
+  if(document.getElementById('chk-h-orig-color')&&document.getElementById('chk-h-orig-color').checked&&S.detectedHColor)parts.push('H태그 원본색');
+  if(doPurge)parts.push('미사용CSS 제거');
+  if(document.getElementById('chk-extract-css').checked)parts.push('파일 내 스타일 추출');
+  if(S.cssFiles.length)parts.push('업로드 CSS '+S.cssFiles.length+'개 병합');
+  return parts.length?('적용된 옵션: '+parts.join(', ')):'';
+}
+
 async function buildEpub(){
   if(!S.files.length){toast('파일이 없습니다','err');return;}
   var btn=document.getElementById('build-btn');btn.disabled=true;
@@ -2565,6 +2655,7 @@ async function buildEpub(){
     var author=document.getElementById('author').value.trim()||'';
     var doPurge=document.getElementById('chk-purge').checked;
     var doIndent=document.getElementById('chk-indent').checked;
+    function v(id){return document.getElementById(id).value.trim();}
     var opts=gatherChapterOpts();
     prog(20,'챕터 처리...');await tick();
     var chapters=makeChapters(S.files,opts);
@@ -2593,7 +2684,7 @@ async function buildEpub(){
     S.cssFiles.forEach(function(f){cssBlocks.push(f.content);});
     // 추출 CSS + 업로드 CSS 병합, 중복 선택자는 업로드 CSS(나중 순서)가 우선
     var userCss=mergeCssWithDedup(cssBlocks);
-    if(doStyle)userCss+='\n'+buildCustomCss();
+    if(opts.scene)userCss+='\n'+buildCustomCss();
     if(doIndent){
       var indentSize=v('indent-size')||'1';
       userCss+='\np:not(.scene-break){text-indent:'+indentSize+'em !important;}';
@@ -2611,7 +2702,8 @@ async function buildEpub(){
     }
     await packEpub(title,author,chapters,userCss,doPurge,S.coverData,autoName);
     prog(100,'완료!');
-    toast('"'+autoName+'.epub" 저장 창이 열렸습니다','ok');
+    var appliedMsg=describeAppliedOptions(opts,doIndent,doPurge);
+    toast('"'+autoName+'.epub" 저장 창이 열렸습니다'+(appliedMsg?' · '+appliedMsg:''),'ok',appliedMsg?5500:2600);
   }catch(e){console.error(e);toast('오류: '+(e.message||String(e)),'err');}
   finally{btn.disabled=false;}
 }
