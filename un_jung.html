@@ -1258,6 +1258,46 @@ function wrapChapterTitleBlock(html){
   return html.slice(0,blockStart)+'<div class="epChapTitleBlock">'+html.slice(blockStart,blockEnd)+'</div>'+html.slice(blockEnd);
 }
 
+/* 제목 박스(예: .chapter-header)를 직접 찾아서, 그 안에 수동 여백용으로 넣어둔
+   <br/>들을 지운다. (실제 제목 h태그 안의 내용은 건드리지 않음)
+   div 중첩을 depth로 세어 실제 바깥쪽 div의 닫는 태그를 정확히 찾는다. */
+function stripTitleBoxBrs(html,boxClasses){
+  if(!boxClasses||!boxClasses.length)return null;
+  var outerCls=boxClasses[0].replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  var openRe=new RegExp('<div\\b[^>]*class=["\'][^"\']*\\b'+outerCls+'\\b[^"\']*["\'][^>]*>','i');
+  var openM=openRe.exec(html);
+  if(!openM)return null;
+  var pos=openM.index+openM[0].length;
+  var depth=1;
+  var tagRe=/<div\b[^>]*>|<\/div>/gi;
+  tagRe.lastIndex=pos;
+  var m,endPos=-1;
+  while((m=tagRe.exec(html))){
+    if(m[0].toLowerCase()==='</div>'){
+      depth--;
+      if(depth===0){endPos=m.index;break;}
+    }else{
+      depth++;
+    }
+  }
+  if(endPos<0)return null;
+  var blockStart=openM.index+openM[0].length;
+  var block=html.slice(blockStart,endPos);
+  /* 실제 heading 태그(h1~h4) 안쪽 내용은 보존하고, 그 밖의 <br/>만 제거 */
+  var hInner=/<h[1-4]\b[^>]*>[\s\S]*?<\/h[1-4]>/i;
+  var hm2=hInner.exec(block);
+  var newBlock;
+  if(hm2){
+    var before=block.slice(0,hm2.index).replace(/<br\s*\/?>/gi,'');
+    var after=block.slice(hm2.index+hm2[0].length).replace(/<br\s*\/?>/gi,'');
+    newBlock=before+hm2[0]+after;
+  }else{
+    newBlock=block.replace(/<br\s*\/?>/gi,'');
+  }
+  if(newBlock===block)return null;
+  return html.slice(0,blockStart)+newBlock+html.slice(endPos);
+}
+
 async function parseTocEntries(zip){
   /* toc.ncx 파싱 → [{title, src, file, anchor}] */
   var ncxPath=null;
@@ -2073,11 +2113,15 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
        비대칭 레이아웃을 갖고 있으면 제목 자체의 마진/정렬 변경이 무력화되거나 화면 중앙이
        아닌 다른 위치에 정렬된 것처럼 보인다 — 디테일/정렬을 직접 수정할 때는 그 박스도 정리 */
     var titleBoxClasses=titleStruct.boxClasses;
+    var needsTitleBrStrip=false;
     if(titleBoxClasses.length&&(useH3Dim||useH3Align)){
       titleBoxClasses.forEach(function(cls){
         var boxPatches={};
         if(useH3Dim){
           boxPatches['height']='auto!important';
+          /* min-height(주로 %단위)가 남아있으면 height:auto를 줘도 박스가 그 밑으로
+             줄어들지 못해서, 마진을 원하는 값으로 줄여도 실제로는 훨씬 넓게 보인다 */
+          boxPatches['min-height']='0!important';
           boxPatches['padding-top']='0!important';
           boxPatches['padding-bottom']='0!important';
         }
@@ -2095,6 +2139,11 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
           patched=patchBlock(patched,'.'+cls+' .wrap',{'border':'none!important','padding-left':'0!important','padding-right':'0!important'});
         }
       });
+      /* 제목 박스 안에 여백을 <br/> 여러 개로 수동으로 잡아둔 원본(예: 위아래 4개씩)이
+         있으면, 마진을 직접 지정해도 그 <br/>들의 줄높이만큼이 그대로 더해져서
+         설정한 값보다 훨씬 넓어 보인다. 마진을 직접 수정하는 경우엔 이 수동 spacer를
+         정리해서 실제로 지정한 마진만 적용되게 한다. */
+      if(useH3Dim)needsTitleBrStrip=true;
       toast('제목 박스(.'+titleBoxClasses.join(' .')+') 레이아웃도 함께 정리됨','ok');
     }
 
@@ -2122,6 +2171,21 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
       }else{
         toast('제목으로 쓰인 heading 태그를 찾지 못해 챕터 제목 설정을 건너뜀 (제목이 h1~h4가 아닌 p 등으로 되어 있을 수 있음)','wrn');
       }
+    }
+    if(needsTitleBrStrip){
+      epProg(60,'제목 박스 안 수동 여백(br) 정리 중...');
+      var brStrippedCnt=0;
+      for(var bi=0;bi<htmlPathsAll.length;bi++){
+        var bp=htmlPathsAll[bi];
+        var bHtml=await workZip.file(bp).async('string');
+        var bNewHtml=stripTitleBoxBrs(bHtml,titleBoxClasses);
+        if(bNewHtml&&bNewHtml!==bHtml){
+          workZip.file(bp,bNewHtml);
+          brStrippedCnt++;
+        }
+        if(bi%20===0)await tick();
+      }
+      if(brStrippedCnt>0)toast('제목 박스 안 수동 여백용 &lt;br&gt; 정리함 ('+brStrippedCnt+'개 챕터)','ok');
     }
     var sceneClass=null,commentClass=null;
     for(var di=0;di<Math.min(htmlPathsAll.length,5)&&(!sceneClass||!commentClass);di++){
