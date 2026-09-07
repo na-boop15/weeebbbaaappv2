@@ -633,6 +633,16 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
         </div>
       </div>
 
+      <div class="ep-sec">
+        <div class="ep-sec-title">깨진 이미지 링크</div>
+        <div style="font-size:10.5px;color:var(--mu);line-height:1.5;margin-bottom:6px;">대소문자 불일치 등으로 실제 파일과 경로가 어긋나 안 뜨는 이미지(표지 포함)를 찾아서, 같은 파일이 다른 경로/대소문자로 존재하면 그쪽으로 연결하고, 아예 없으면 태그를 삭제해요.</div>
+        <div class="ep-ck-row">
+          <input type="checkbox" id="ckFixImg" checked>
+          <label for="ckFixImg">깨진 이미지 경로 자동 복구</label>
+          <span class="ep-default-badge">기본 체크됨</span>
+        </div>
+      </div>
+
     </div>
   </div>
     <button class="btn btn-p" id="btnEpubSave" disabled>수정된 EPUB 저장하기</button>
@@ -1228,6 +1238,26 @@ function detectVisibleTitleAfterEmptyHeading(html){
   return /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?<b\b/i.test(rest);
 }
 
+/* 빈 마커 heading 뒤, 실제로 보이는 제목 영역을 하나의 블록으로 묶는다.
+   회차 제목 위에 아이콘 이미지(<div><img/></div>)가 있는 책은 이미지+제목을 함께
+   묶어서, "제목 위/아래 여백" 설정이 이미지와 제목 문단 사이가 아니라 이미지 위/
+   제목 아래에 정확히 적용되도록 한다. 이미지가 없으면 제목 문단만 묶는다. */
+function wrapChapterTitleBlock(html){
+  if(/class="[^"]*epChapTitleBlock/i.test(html))return null; // 이미 처리됨
+  var hm=html.match(/<h[1-4]\b[^>]*>\s*<\/h[1-4]>/i);
+  if(!hm)return null;
+  var startSearch=hm.index+hm[0].length;
+  var win=html.slice(startSearch,startSearch+3000);
+  var imgDivRe=/<div\b[^>]*>\s*<img\b[^>]*\/?>\s*<\/div>/i;
+  var titleRe=/<p\b[^>]*>(?:(?!<\/p>)[\s\S])*?<b\b(?:(?!<\/p>)[\s\S])*?<\/p>/i;
+  var imgM=imgDivRe.exec(win);
+  var titleM=titleRe.exec(win);
+  if(!titleM)return null;
+  var blockStart=(imgM&&imgM.index<titleM.index)?startSearch+imgM.index:startSearch+titleM.index;
+  var blockEnd=startSearch+titleM.index+titleM[0].length;
+  return html.slice(0,blockStart)+'<div class="epChapTitleBlock">'+html.slice(blockStart,blockEnd)+'</div>'+html.slice(blockEnd);
+}
+
 async function parseTocEntries(zip){
   /* toc.ncx 파싱 → [{title, src, file, anchor}] */
   var ncxPath=null;
@@ -1528,13 +1558,24 @@ var epubZip=null,epubFilename='';
 /* 실제 챕터 xhtml이 <link>로 참조하는 CSS를 찾는다.
    (style.css/stylesheet.css라는 이름이 아니어도, 예: css/ui.css 등도 찾아낸다) */
 async function findCssInZip(zip){
-  var cssPath=null,sampleHtmlPath=null;
+  var candidates=[];
   zip.forEach(function(p){
-    if(!sampleHtmlPath&&/\.(xhtml|html|htm)$/i.test(p)&&!/cover|title|nav/i.test(p))sampleHtmlPath=p;
+    if(/\.(xhtml|html|htm)$/i.test(p)&&!/cover|title|nav/i.test(p))candidates.push(p);
   });
-  var sampleHtml='';
+  /* 첫 파일을 무조건 쓰면 판권/작품소개 페이지(book.info.xhtml 등)가 zip 순서상
+     먼저 나오는 경우, 실제 챕터 구조(예: .chapter-header 박스)를 못 보고 엉뚱한
+     페이지로 제목/래퍼 class를 감지하게 된다. 앞쪽 후보 몇 개를 미리 읽어서
+     본문 글자 수가 가장 많은 파일(=진짜 챕터일 가능성이 높은 파일)을 고른다. */
+  var sampleHtmlPath=null,sampleHtml='',bestLen=-1;
+  var checkCount=Math.min(candidates.length,8);
+  for(var i=0;i<checkCount;i++){
+    var h='';
+    try{h=await zip.file(candidates[i]).async('string');}catch(e){continue;}
+    var textLen=h.replace(/<[^>]+>/g,'').trim().length;
+    if(textLen>bestLen){bestLen=textLen;sampleHtml=h;sampleHtmlPath=candidates[i];}
+  }
+  var cssPath=null;
   if(sampleHtmlPath){
-    sampleHtml=await zip.file(sampleHtmlPath).async('string');
     var linkM=sampleHtml.match(/<link[^>]+href=["']([^"']+\.css)["']/i);
     if(linkM){
       var baseDir=sampleHtmlPath.substring(0,sampleHtmlPath.lastIndexOf('/')+1);
@@ -1789,6 +1830,20 @@ function extractProp(css,sel,prop){
 /* 원본 CSS에서 셀렉터 블록 전체를 수정 없이 유지하면서 특정 속성만 추가/교체
    ※ 셀렉터 경계를 식별자 단위로 검사 — 예: sel='p' 가 'sup{'나 'p.pic,' 안의 p와
       잘못 매칭되지 않도록 앞뒤로 [.\w-]가 아닌 문자(혹은 시작/공백/{)인지 확인한다 */
+/* baseDir(현재 파일이 있는 폴더)에서 targetPath(zip 루트 기준 절대경로)로 가는
+   상대경로를 만든다. 이미지 경로 대소문자 불일치 복구에 사용 */
+function relPathFrom(baseDir,targetPath){
+  var baseParts=baseDir.split('/').filter(Boolean);
+  var targetParts=targetPath.split('/').filter(Boolean);
+  var i=0;
+  while(i<baseParts.length&&i<targetParts.length&&baseParts[i]===targetParts[i])i++;
+  var up=baseParts.length-i;
+  var rel=[];
+  for(var k=0;k<up;k++)rel.push('..');
+  rel=rel.concat(targetParts.slice(i));
+  return rel.join('/');
+}
+
 function patchBlock(css,sel,patches){
   var escaped=sel.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   var re=new RegExp('(^|[^.\\w-])('+escaped+')(?![.\\w-])(\\s*)(\\{)([^}]*)(\\})');
@@ -2033,6 +2088,12 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
           boxPatches['padding-right']='0!important';
         }
         patched=patchBlock(patched,'.'+cls,boxPatches);
+        /* 우측정렬형 템플릿(예: .ch-type1 .wrap{border-left:5px solid})은 제목 박스
+           안쪽에 별도로 선(border)과 좌측 여백을 넣어두는 경우가 있다. 가운데 정렬로
+           바꾸면 이 선/여백이 어색하게 남으므로 같이 정리한다. */
+        if(useH3Align){
+          patched=patchBlock(patched,'.'+cls+' .wrap',{'border':'none!important','padding-left':'0!important','padding-right':'0!important'});
+        }
       });
       toast('제목 박스(.'+titleBoxClasses.join(' .')+') 레이아웃도 함께 정리됨','ok');
     }
@@ -2042,25 +2103,22 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
     workZip.forEach(function(p){if(/\.(xhtml|html|htm)$/i.test(p)&&!/cover|title|nav/i.test(p))htmlPathsAll.push(p);});
 
     if(needsVisibleTitleTagging){
-      epProg(58,'화면에 보이는 챕터 제목 문단 태깅 ('+htmlPathsAll.length+'개)...');
-      var titleTagRe=/(<h[1-4]\b[^>]*>\s*<\/h[1-4]>[\s\S]{0,3000}?<p\b)([^>]*)(>(?:(?!<\/p>)[\s\S])*?<b\b)/i;
-      var visTitleTagged=0;
+      epProg(58,'회차 제목 영역(아이콘+제목) 묶는 중 ('+htmlPathsAll.length+'개)...');
+      var wrappedCnt=0;
       for(var vi=0;vi<htmlPathsAll.length;vi++){
         var vp=htmlPathsAll[vi];
         var vHtml=await workZip.file(vp).async('string');
-        var vm=vHtml.match(titleTagRe);
-        if(!vm)continue;
-        var vAttrs=vm[2];
-        var vNewAttrs=/class\s*=/i.test(vAttrs)
-          ?vAttrs.replace(/class\s*=\s*(["'])([^"']*)\1/i,function(f,q,cls){return 'class='+q+cls+' epChapTitle'+q;})
-          :vAttrs+' class="epChapTitle"';
-        var vNewHtml=vHtml.replace(titleTagRe,vm[1]+vNewAttrs+vm[3]);
+        var vNewHtml=wrapChapterTitleBlock(vHtml);
+        if(!vNewHtml)continue;
         workZip.file(vp,vNewHtml);
-        visTitleTagged++;
+        wrappedCnt++;
       }
-      if(visTitleTagged>0){
-        patched=patchBlock(patched,'.epChapTitle',h3patches);
-        toast('제목이 heading 태그가 아니라 본문과 같은 class의 p라서, 실제 제목 문단('+visTitleTagged+'개 챕터)에 전용 class를 붙여서 설정을 적용함','ok');
+      if(wrappedCnt>0){
+        patched=patchBlock(patched,'.epChapTitleBlock',h3patches);
+        /* 블록 안의 이미지·제목 문단이 본문 p 마진(!important)까지 이중으로 받아
+           덩어리 위/아래가 아니라 안쪽에서도 벌어지는 걸 막기 위해 내부 p는 마진 0으로 정리 */
+        patched=patchBlock(patched,'.epChapTitleBlock p',{'margin':'0!important','padding':'0!important'});
+        toast('아이콘 이미지+회차 제목을 한 덩어리로 묶어서('+wrappedCnt+'개 챕터) 위/아래 여백 설정을 적용함','ok');
       }else{
         toast('제목으로 쓰인 heading 태그를 찾지 못해 챕터 제목 설정을 건너뜀 (제목이 h1~h4가 아닌 p 등으로 되어 있을 수 있음)','wrn');
       }
@@ -2205,6 +2263,46 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
 
     if(cssPath){workZip.file(cssPath,patched);}
     else{workZip.file('OEBPS/style.css',patched);}
+
+    /* 깨진 이미지 링크(대소문자 불일치 등) 자동 복구 — 표지(book.cover.xhtml류)를 포함해
+       실제 파일과 경로/대소문자가 어긋나 안 뜨는 <img>를 찾는다. 같은 파일이 다른
+       경로·대소문자로 실제 존재하면 그쪽으로 src를 고치고, 아예 없으면 태그를 지운다. */
+    if(document.getElementById('ckFixImg')&&document.getElementById('ckFixImg').checked){
+      epProg(80,'깨진 이미지 링크 확인...');
+      var allPaths=[];
+      workZip.forEach(function(p,fe){if(!fe.dir)allPaths.push(p);});
+      var lowerMap={};
+      allPaths.forEach(function(p){lowerMap[p.toLowerCase()]=p;});
+      var allHtmlPaths=allPaths.filter(function(p){return /\.(xhtml|html|htm)$/i.test(p);});
+      var imgFixed=0,imgRemoved=0;
+      for(var ii=0;ii<allHtmlPaths.length;ii++){
+        var ip=allHtmlPaths[ii];
+        var ihtml=await workZip.file(ip).async('string');
+        if(!/<img\b/i.test(ihtml)){continue;}
+        var baseDir=ip.substring(0,ip.lastIndexOf('/')+1);
+        var changed=false;
+        var imgRe=/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*\/?>/gi;
+        var inew=ihtml.replace(imgRe,function(full,srcVal){
+          if(/^(?:https?:)?\/\//i.test(srcVal)||/^data:/i.test(srcVal))return full; // 외부/데이터 URL은 건드리지 않음
+          var resolved;
+          try{resolved=new URL(srcVal,'https://x/'+baseDir).pathname.replace(/^\//,'');}catch(e){return full;}
+          if(workZip.file(resolved))return full; // 이미 정상 연결됨
+          var match=lowerMap[resolved.toLowerCase()];
+          if(match){
+            changed=true;imgFixed++;
+            var newRel=relPathFrom(baseDir,match);
+            return full.replace(srcVal,newRel);
+          }
+          changed=true;imgRemoved++;
+          return ''; // 실제로 존재하지 않는 파일 — 태그째로 삭제
+        });
+        if(changed)workZip.file(ip,inew);
+        if(ii%20===0)await tick();
+      }
+      if(imgFixed||imgRemoved){
+        toast('깨진 이미지 링크 '+imgFixed+'개 경로 복구'+(imgRemoved?', '+imgRemoved+'개 삭제':'')+'함','ok');
+      }
+    }
 
     epProg(85,'압축 중...');
     var blob=await workZip.generateAsync({type:'blob',mimeType:'application/epub+zip',compression:'DEFLATE',compressionOptions:{level:6}});
