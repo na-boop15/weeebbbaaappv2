@@ -176,6 +176,7 @@
 
 
 
+
 /*!
 
 JSZip v3.10.1 - A JavaScript class for generating and reading zip files
@@ -195,8 +196,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
 
 
+
 </script>
 <script>
+
 
 
 
@@ -447,7 +450,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       const v = colorMatch[1].toLowerCase().replace(/\s/g,'');
       colorful = !NEUTRAL_COLORS.includes(v);
     }
-    return {italic, bold, colorful, any: italic||bold||colorful};
+    const opacityMatch = body.match(/opacity\s*:\s*([\d.]+)/i);
+    const faded = !!opacityMatch && parseFloat(opacityMatch[1]) < 0.95; // 회상/시스템창 등을 옅게 표시하는 경우
+    return {italic, bold, colorful, faded, any: italic||bold||colorful||faded};
   }
 
   // text-indent가 실제 값(0이 아님)으로 지정되어 있는지 확인 (CSS 본문/인라인 style 양쪽에서 재사용)
@@ -462,7 +467,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
 
   function parseCssClasses(cssText){
-    const map = {}; // className -> {italic,colorful,bold}
+    const map = {}; // className -> {italic,colorful,bold,faded}
     const ruleRe = /([^{}]+)\{([^{}]*)\}/g;
     let m;
     while((m = ruleRe.exec(cssText))){
@@ -473,10 +478,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const cm = sel.match(/^\.([a-zA-Z_][\w-]*)$/); // 단순 클래스 선택자만
         if(cm){
           const cls = cm[1];
-          if(!map[cls]) map[cls] = {italic:false,bold:false,colorful:false};
+          if(!map[cls]) map[cls] = {italic:false,bold:false,colorful:false,faded:false};
           map[cls].italic = map[cls].italic || r.italic;
           map[cls].bold = map[cls].bold || r.bold;
           map[cls].colorful = map[cls].colorful || r.colorful;
+          map[cls].faded = map[cls].faded || r.faded;
         }
       }
     }
@@ -528,7 +534,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const customClassCount = new Set(classSelMatches.map(m=>m.trim())).size;
     const classPropsMap = parseCssClasses(cssText.replace(/\/\*[\s\S]*?\*\//g, ''));
     const candidateDistinctiveClasses = Object.keys(classPropsMap).filter(cls =>
-      (classPropsMap[cls].italic || classPropsMap[cls].bold || classPropsMap[cls].colorful) && !UTILITY_CLASS_RE.test(cls));
+      (classPropsMap[cls].italic || classPropsMap[cls].bold || classPropsMap[cls].colorful || classPropsMap[cls].faded) && !UTILITY_CLASS_RE.test(cls));
 
     stats.cssFileCount = cssItems.length;
     stats.totalCssLen = totalCssLen;
@@ -609,11 +615,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if(!hasStyleAttr && SCENE_BREAK_TEXT_RE.test(txt)) sceneBreakPlaintextHits++;
       }
 
-      // 서사 구분용 스타일(회상/독백/강조 등) 사용 여부: em/strong/blockquote 태그 + CSS 후보 클래스
+      // 서사 구분용 스타일(회상/독백/강조 등) 사용 여부: em/strong/blockquote/i/b 태그 + CSS 후보 클래스
       const tagEls = [].concat(
         Array.from(body.getElementsByTagName('em')),
         Array.from(body.getElementsByTagName('strong')),
-        Array.from(body.getElementsByTagName('blockquote'))
+        Array.from(body.getElementsByTagName('blockquote')),
+        Array.from(body.getElementsByTagName('i')),
+        Array.from(body.getElementsByTagName('b'))
       );
       for(const el of tagEls){
         if((el.textContent||'').trim().length >= 2) distinctiveMeaningfulCount++;
@@ -1030,6 +1038,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   });
 
 })();
+
 
 
 
