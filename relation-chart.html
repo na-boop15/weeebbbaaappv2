@@ -213,6 +213,9 @@
       <input type="file" id="loadJsonInput" accept="application/json" style="display:none">
     </div>
     <div class="btn-row">
+      <button class="btn-secondary" id="textBackupBtn">텍스트로 백업/복원</button>
+    </div>
+    <div class="btn-row">
       <button class="btn-secondary" id="pngBtn">PNG로 저장</button>
       <button class="btn-secondary" id="codeBtn">코드 보기</button>
     </div>
@@ -252,6 +255,25 @@
     <div class="code-footer">
       <button id="codeCopyBtn">복사</button>
       <button class="close" id="codeCloseBtn">닫기</button>
+    </div>
+  </div>
+</div>
+
+<div class="code-modal" id="textBackupModal">
+  <div class="code-box">
+    <div class="code-tabs">
+      <span style="flex:1; display:flex; align-items:center; justify-content:center; color:#c9c2ac; font-size:12px;">홈 화면 앱에서도 항상 되는 백업 방법 (다운로드 없이 복사/붙여넣기)</span>
+    </div>
+    <div style="padding:14px; overflow:auto;">
+      <label style="color:#c9c2ac">1. 백업하기: 아래 내용을 전체 복사해서 메모 앱 등에 붙여넣어 보관하세요</label>
+      <textarea id="textBackupOut" readonly style="width:100%; height:110px; margin:6px 0 14px; background:#111; color:#9fe0a0; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; border:1px solid #3a362c; border-radius:6px; padding:8px;"></textarea>
+      <label style="color:#c9c2ac">2. 복원하기: 예전에 백업해둔 내용을 아래에 붙여넣고 "불러오기"를 누르세요</label>
+      <textarea id="textBackupIn" placeholder="여기에 백업해둔 텍스트를 붙여넣으세요" style="width:100%; height:110px; margin:6px 0; background:#111; color:#eee; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; border:1px solid #3a362c; border-radius:6px; padding:8px;"></textarea>
+    </div>
+    <div class="code-footer">
+      <button id="textBackupCopyBtn">복사</button>
+      <button id="textBackupLoadBtn">불러오기</button>
+      <button class="close" id="textBackupCloseBtn">닫기</button>
     </div>
   </div>
 </div>
@@ -685,23 +707,29 @@
   });
 
   function saveOrShare(blob, filename, mime){
+    function fallbackDownload(){
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+      shareModalText.textContent = '"' + filename + '" 다운로드를 시작했어요. 브라우저 다운로드 폴더를 확인해주세요.';
+      shareModal.classList.add('show');
+    }
     if(navigator.canShare && navigator.share){
       var file = new File([blob], filename, { type: mime });
       if(navigator.canShare({ files: [file] })){
-        navigator.share({ files: [file], title: filename }).catch(function(){});
+        navigator.share({ files: [file], title: filename }).catch(function(err){
+          if(err && err.name === 'AbortError') return; // user cancelled the share sheet on purpose
+          fallbackDownload();
+        });
         return;
       }
     }
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
-    shareModalText.textContent = '"' + filename + '" 다운로드를 시작했어요. iOS Safari에서는 공유 시트가 대신 뜰 수 있습니다.';
-    shareModal.classList.add('show');
+    fallbackDownload();
   }
 
   document.getElementById('pngBtn').addEventListener('click', function(){
@@ -841,6 +869,58 @@
       document.getElementById('loadJsonInput').value = '';
     };
     reader.readAsText(file);
+  });
+
+  var textBackupModal = document.getElementById('textBackupModal');
+  var textBackupOut = document.getElementById('textBackupOut');
+  var textBackupIn = document.getElementById('textBackupIn');
+
+  document.getElementById('textBackupBtn').addEventListener('click', function(){
+    var data = { title: titleInput.value, people: state.people, nextId: state.nextId };
+    textBackupOut.value = JSON.stringify(data);
+    textBackupIn.value = '';
+    textBackupModal.classList.add('show');
+  });
+  document.getElementById('textBackupCloseBtn').addEventListener('click', function(){
+    textBackupModal.classList.remove('show');
+  });
+  document.getElementById('textBackupCopyBtn').addEventListener('click', function(){
+    textBackupOut.select();
+    textBackupOut.setSelectionRange(0, 999999);
+    var done = function(){
+      var btn = document.getElementById('textBackupCopyBtn');
+      var old = btn.textContent;
+      btn.textContent = '복사됨!';
+      setTimeout(function(){ btn.textContent = old; }, 1500);
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(textBackupOut.value).then(done).catch(function(){
+        try{ document.execCommand('copy'); done(); }catch(e){ alert('복사에 실패했습니다. 텍스트를 길게 눌러 직접 복사해주세요.'); }
+      });
+    } else {
+      try{ document.execCommand('copy'); done(); }catch(e){ alert('복사에 실패했습니다. 텍스트를 길게 눌러 직접 복사해주세요.'); }
+    }
+  });
+  document.getElementById('textBackupLoadBtn').addEventListener('click', function(){
+    var raw = textBackupIn.value.trim();
+    if(!raw){ alert('불러올 텍스트를 붙여넣어주세요.'); return; }
+    try{
+      var data = JSON.parse(raw);
+      if(!data || !Array.isArray(data.people)) throw new Error('bad format');
+      if(state.people.length && !confirm('현재 데이터를 붙여넣은 내용으로 덮어씁니다. 계속할까요?')) return;
+      state.people = data.people;
+      state.nextId = data.nextId || (data.people.length + 1);
+      titleInput.value = data.title || '';
+      titleDisplay.value = data.title || '가문 인물관계도';
+      editingId = null;
+      addBtn.textContent = '인물 추가';
+      refreshDropdowns();
+      renderList();
+      renderChart();
+      textBackupModal.classList.remove('show');
+    }catch(err){
+      alert('붙여넣은 내용을 읽을 수 없습니다. 이 웹앱에서 백업한 텍스트가 맞는지 확인해주세요.');
+    }
   });
 
   document.getElementById('exampleBtn').addEventListener('click', function(){
