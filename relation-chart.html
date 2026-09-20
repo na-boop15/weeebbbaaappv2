@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>인물관계도 생성기</title>
+<style>
+  :root{
+    --paper:#fdfbf4;
+    --paper2:#f7f0dc;
+    --ink:#3a2f22;
+    --gold:#c9a227;
+    --gold-dark:#8a6a1f;
+    --line:#b08d46;
+    --panel:#fffdf8;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:"Apple SD Gothic Neo","맑은 고딕","Malgun Gothic",sans-serif;
+    background:#2b2620;
+    color:var(--ink);
+    min-height:100vh;
+  }
+  .app{ display:flex; min-height:100vh; }
+  .sidebar{
+    width:370px; flex:0 0 370px; background:var(--panel);
+    padding:20px; overflow-y:auto; max-height:100vh; border-right:1px solid #ddd2b0;
+  }
+  .sidebar h1{ font-size:18px; margin:0 0 4px; color:var(--gold-dark); }
+  .sidebar .sub{ font-size:12px; color:#8a7f68; margin-bottom:18px; }
+  fieldset{ border:1px solid #e6dab5; border-radius:8px; padding:12px 14px 14px; margin:0 0 14px; }
+  legend{ font-size:12px; font-weight:600; color:var(--gold-dark); padding:0 6px; }
+  label{ display:block; font-size:12px; color:#5c5341; margin:8px 0 4px; }
+  input[type=text], select{
+    width:100%; padding:7px 8px; border:1px solid #ddd0a3; border-radius:6px;
+    font-size:13px; background:#fff; color:var(--ink);
+  }
+  .row{display:flex; gap:8px;}
+  .row > div{flex:1;}
+  .radio-group{display:flex; gap:14px; margin-top:2px; flex-wrap:wrap;}
+  .radio-group label{display:flex; align-items:center; gap:4px; margin:0; font-size:12px; color:var(--ink);}
+  .radio-group input{margin:0;}
+  .hint{font-size:11px; color:#a79c81; margin-top:4px;}
+  button{ cursor:pointer; border:none; border-radius:6px; font-size:13px; padding:9px 12px; font-weight:600; }
+  .btn-primary{ background:var(--gold-dark); color:#fff; width:100%; margin-top:12px; }
+  .btn-primary:hover{background:#6c5117;}
+  .btn-row{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;}
+  .btn-secondary{ background:#f6ecc9; color:var(--gold-dark); flex:1; min-width:0; font-size:12px; padding:8px 6px; }
+  .btn-secondary:hover{background:#efdfaf;}
+  .people-list{
+    list-style:none; margin:0; padding:0; max-height:280px; overflow-y:auto;
+    border:1px solid #e6dab5; border-radius:8px;
+  }
+  .people-list li{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 10px; font-size:12.5px; border-bottom:1px solid #f1e9cf;
+  }
+  .people-list li:last-child{border-bottom:none;}
+  .people-list .name{ display:flex; align-items:center; gap:6px; overflow:hidden; }
+  .swatch{ width:9px; height:9px; border-radius:2px; flex:0 0 auto; }
+  .tag{ font-size:10px; background:#eee1bc; color:#8a6a1f; padding:1px 5px; border-radius:3px; }
+  .people-list .actions button{
+    padding:3px 7px; font-size:11px; font-weight:500; background:transparent; color:#a1936d;
+  }
+  .people-list .actions button:hover{color:#5c4a1f;}
+  .empty-hint{ padding:14px 10px; font-size:12px; color:#b3a884; text-align:center; }
+  .main{ flex:1; overflow:auto; display:flex; align-items:flex-start; justify-content:center; padding:32px; }
+  .chart-wrap{
+    position:relative;
+    background:linear-gradient(160deg, var(--paper), var(--paper2));
+    border-radius:4px; box-shadow:0 12px 40px rgba(0,0,0,.4); padding:36px;
+  }
+  .frame-border{
+    position:absolute; inset:16px; border:1.5px solid var(--gold); border-radius:2px; pointer-events:none;
+  }
+  .frame-border::after{
+    content:""; position:absolute; inset:5px; border:0.6px solid var(--gold); opacity:.6;
+  }
+  .title-cartouche{
+    position:relative; margin:24px auto 6px; width:fit-content;
+    padding:10px 50px; border:1.5px solid var(--gold-dark);
+    box-shadow:0 0 0 4px var(--panel), 0 0 0 5.5px var(--gold);
+    background:var(--panel); text-align:center;
+  }
+  .title-cartouche::before, .title-cartouche::after{
+    content:"❖"; color:var(--gold); position:absolute; top:50%; transform:translateY(-50%); font-size:13px;
+  }
+  .title-cartouche::before{left:16px;}
+  .title-cartouche::after{right:16px;}
+  .title-cartouche input{
+    border:none; background:transparent; text-align:center;
+    font-family:"Batang","바탕",serif; font-size:25px; font-weight:700; letter-spacing:6px;
+    color:var(--gold-dark); width:100%; min-width:180px;
+  }
+  .title-cartouche input:focus{outline:none;}
+  .svg-scroll{ overflow:auto; margin-top:14px; }
+  #chartSvg text{ font-family:"Apple SD Gothic Neo","맑은 고딕","Malgun Gothic",sans-serif; }
+  .toolbar{ display:flex; justify-content:center; gap:8px; margin-top:16px; }
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.5);
+    display:none; align-items:center; justify-content:center; z-index:50;
+  }
+  .modal-overlay.show{display:flex;}
+  .modal{
+    background:#fff; border-radius:10px; padding:22px 24px; max-width:320px;
+    text-align:center; font-size:13px; color:#333;
+  }
+  .modal button{ margin-top:14px; background:var(--gold-dark); color:#fff; padding:8px 18px; }
+  .code-modal{
+    position:fixed; inset:0; background:rgba(0,0,0,.55);
+    display:none; align-items:center; justify-content:center; z-index:60;
+  }
+  .code-modal.show{display:flex;}
+  .code-box{
+    background:#1e1c17; color:#eee; width:min(720px,92vw); max-height:80vh;
+    border-radius:10px; display:flex; flex-direction:column; overflow:hidden;
+  }
+  .code-tabs{display:flex; border-bottom:1px solid #3a362c;}
+  .code-tabs button{ flex:1; background:#25221b; color:#c9c2ac; border-radius:0; font-size:12px; padding:10px; }
+  .code-tabs button.active{background:#1e1c17; color:#fff;}
+  .code-pre{
+    padding:14px; overflow:auto; font-size:11.5px; line-height:1.5;
+    font-family:ui-monospace,Menlo,Consolas,monospace; white-space:pre; flex:1;
+  }
+  .code-footer{display:flex; justify-content:flex-end; gap:8px; padding:10px 14px; border-top:1px solid #3a362c;}
+  .code-footer button{background:#3a362c; color:#eee; font-size:12px; padding:7px 14px;}
+  .code-footer button.close{background:var(--gold-dark);}
+  @media (max-width: 820px){
+    .app{flex-direction:column;}
+    .sidebar{width:100%; flex:none; max-height:none; border-right:none; border-bottom:1px solid #ddd2b0;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="sidebar">
+    <h1>인물관계도 생성기</h1>
+    <div class="sub">전통 가계도 스타일 · 소설 등장인물 정리용</div>
+
+    <fieldset>
+      <legend>인물 추가</legend>
+
+      <label>관계 유형</label>
+      <div class="radio-group">
+        <label><input type="radio" name="relType" value="root" checked> 최상위</label>
+        <label><input type="radio" name="relType" value="child"> 자녀</label>
+        <label><input type="radio" name="relType" value="spouse"> 배우자</label>
+      </div>
+
+      <div id="parentField" style="display:none">
+        <label>부모 선택</label>
+        <select id="parentSelect"></select>
+        <div class="hint">배우자를 부모로 선택하면, 그 배우자 소생 자녀로만 따로 묶여서 표시됩니다.</div>
+      </div>
+
+      <div id="spouseField" style="display:none">
+        <label>배우자 대상</label>
+        <select id="spouseSelect"></select>
+        <label>배치</label>
+        <div class="radio-group">
+          <label><input type="radio" name="spouseSide" value="before"> 앞에</label>
+          <label><input type="radio" name="spouseSide" value="after" checked> 뒤에</label>
+        </div>
+      </div>
+
+      <label>이름 *</label>
+      <input type="text" id="nameInput" placeholder="예: 사윤백">
+
+      <label>부제 (괄호 안 설명, 선택)</label>
+      <input type="text" id="subtitleInput" placeholder="예: 문국공">
+
+      <label>라벨 / 소제목 (방·가문 이름 등, 선택)</label>
+      <input type="text" id="labelInput" placeholder="예: 대방, 두환성 가문">
+      <div class="hint">박스 위에 작은 리본 형태로 표시됩니다 (방 구분, 가문명 등).</div>
+
+      <div class="radio-group" style="margin-top:10px">
+        <label><input type="checkbox" id="centerAnchorInput"> 이 사람의 자녀 연결선을 배우자와의 가운데에서 시작</label>
+      </div>
+      <div class="hint">부부가 1명일 때 자연스럽습니다. 자녀를 이 사람(또는 이 사람의 배우자)에게 연결할 때 적용돼요.</div>
+
+      <label>박스 색상</label>
+      <select id="colorSelect">
+        <option value="green">초록 (혈통)</option>
+        <option value="red">빨강 (배우자)</option>
+        <option value="blue">파랑</option>
+        <option value="purple">보라/회색</option>
+        <option value="gold">금색 (기본)</option>
+      </select>
+
+      <button class="btn-primary" id="addBtn">인물 추가</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>등록된 인물 (<span id="peopleCount">0</span>)</legend>
+      <ul class="people-list" id="peopleList">
+        <li class="empty-hint">아직 등록된 인물이 없습니다</li>
+      </ul>
+    </fieldset>
+
+    <fieldset>
+      <legend>차트 제목</legend>
+      <input type="text" id="titleInput" placeholder="가문 인물관계도">
+    </fieldset>
+
+    <div class="btn-row">
+      <button class="btn-secondary" id="exampleBtn">예제 불러오기</button>
+      <button class="btn-secondary" id="resetBtn">전체 초기화</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn-secondary" id="saveJsonBtn">파일로 저장</button>
+      <button class="btn-secondary" id="loadJsonBtn">파일 불러오기</button>
+      <input type="file" id="loadJsonInput" accept="application/json" style="display:none">
+    </div>
+    <div class="btn-row">
+      <button class="btn-secondary" id="pngBtn">PNG로 저장</button>
+      <button class="btn-secondary" id="codeBtn">코드 보기</button>
+    </div>
+    <div class="hint" id="autosaveHint" style="margin-top:8px"></div>
+  </div>
+
+  <div class="main">
+    <div class="chart-wrap" id="chartWrap">
+      <div class="frame-border"></div>
+
+      <div class="title-cartouche">
+        <input type="text" id="titleDisplay" value="가문 인물관계도" readonly>
+      </div>
+
+      <div class="svg-scroll" id="svgScroll">
+        <svg id="chartSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="shareModal">
+  <div class="modal">
+    <p id="shareModalText">파일을 준비했습니다. 아래 버튼으로 저장하거나 공유하세요.</p>
+    <button id="shareModalClose">닫기</button>
+  </div>
+</div>
+
+<div class="code-modal" id="codeModal">
+  <div class="code-box">
+    <div class="code-tabs">
+      <button class="active" data-tab="html">HTML</button>
+      <button data-tab="css">CSS</button>
+      <button data-tab="js">JS (데이터)</button>
+    </div>
+    <pre class="code-pre" id="codePre"></pre>
+    <div class="code-footer">
+      <button id="codeCopyBtn">복사</button>
+      <button class="close" id="codeCloseBtn">닫기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var COLORS = {
+    green:  {label:'초록 (혈통)', border:'#5c8a63', bg:'#eef6ec'},
+    red:    {label:'빨강 (배우자)', border:'#c0677a', bg:'#fbeef1'},
+    blue:   {label:'파랑', border:'#5b83b0', bg:'#eaf2fa'},
+    purple: {label:'보라/회색', border:'#8b81a6', bg:'#f1eef7'},
+    gold:   {label:'금색 (기본)', border:'#c19a4b', bg:'#fbf4e2'}
+  };
+
+  var BOX_W = 168, BOX_H = 54, H_GAP = 22, V_GAP = 58, LIST_GAP = 6, MARGIN = 56;
+
+  var state = { people: [], nextId: 1 };
+
+  var relTypeRadios = document.querySelectorAll('input[name=relType]');
+  var parentField = document.getElementById('parentField');
+  var spouseField = document.getElementById('spouseField');
+  var parentSelect = document.getElementById('parentSelect');
+  var spouseSelect = document.getElementById('spouseSelect');
+  var nameInput = document.getElementById('nameInput');
+  var subtitleInput = document.getElementById('subtitleInput');
+  var labelInput = document.getElementById('labelInput');
+  var centerAnchorInput = document.getElementById('centerAnchorInput');
+  var colorSelect = document.getElementById('colorSelect');
+  var addBtn = document.getElementById('addBtn');
+  var peopleList = document.getElementById('peopleList');
+  var peopleCount = document.getElementById('peopleCount');
+  var titleInput = document.getElementById('titleInput');
+  var titleDisplay = document.getElementById('titleDisplay');
+  var svg = document.getElementById('chartSvg');
+  var editingId = null;
+
+  function getRelType(){
+    var r = document.querySelector('input[name=relType]:checked');
+    return r ? r.value : 'root';
+  }
+  function getSpouseSide(){
+    var r = document.querySelector('input[name=spouseSide]:checked');
+    return r ? r.value : 'after';
+  }
+
+  relTypeRadios.forEach(function(r){
+    r.addEventListener('change', function(){
+      var t = getRelType();
+      parentField.style.display = (t === 'child') ? 'block' : 'none';
+      spouseField.style.display = (t === 'spouse') ? 'block' : 'none';
+      if(t === 'spouse') colorSelect.value = 'red';
+      if(t !== 'spouse' && colorSelect.value === 'red') colorSelect.value = 'green';
+    });
+  });
+
+  function personTag(p){ return p.spouseTarget ? ' (배우자)' : ''; }
+
+  function refreshDropdowns(){
+    var opts = state.people.map(function(p){
+      return '<option value="'+p.id+'">'+escapeHtml(p.name)+personTag(p)+'</option>';
+    }).join('');
+    parentSelect.innerHTML = opts || '<option value="">(등록된 인물 없음)</option>';
+    spouseSelect.innerHTML = opts || '<option value="">(등록된 인물 없음)</option>';
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  addBtn.addEventListener('click', function(){
+    var name = nameInput.value.trim();
+    if(!name){ nameInput.focus(); return; }
+    var type = getRelType();
+    var person = {
+      id: editingId || ('p' + state.nextId++),
+      name: name,
+      subtitle: subtitleInput.value.trim(),
+      label: labelInput.value.trim(),
+      centerAnchor: centerAnchorInput.checked,
+      color: colorSelect.value,
+      parentId: null,
+      spouseTarget: null,
+      spouseSide: null
+    };
+    if(type === 'child'){
+      person.parentId = parentSelect.value || null;
+    } else if(type === 'spouse'){
+      person.spouseTarget = spouseSelect.value || null;
+      person.spouseSide = getSpouseSide();
+    }
+
+    if(editingId){
+      var idx = state.people.findIndex(function(p){ return p.id === editingId; });
+      if(idx > -1) state.people[idx] = person;
+      editingId = null;
+      addBtn.textContent = '인물 추가';
+    } else {
+      state.people.push(person);
+    }
+
+    nameInput.value = '';
+    subtitleInput.value = '';
+    labelInput.value = '';
+    centerAnchorInput.checked = false;
+    refreshDropdowns();
+    renderList();
+    renderChart();
+  });
+
+  function startEdit(id){
+    var p = state.people.find(function(x){ return x.id === id; });
+    if(!p) return;
+    editingId = id;
+    nameInput.value = p.name;
+    subtitleInput.value = p.subtitle || '';
+    labelInput.value = p.label || '';
+    centerAnchorInput.checked = !!p.centerAnchor;
+    colorSelect.value = p.color;
+    if(p.parentId){
+      document.querySelector('input[name=relType][value=child]').checked = true;
+      parentField.style.display = 'block';
+      spouseField.style.display = 'none';
+      parentSelect.value = p.parentId;
+    } else if(p.spouseTarget){
+      document.querySelector('input[name=relType][value=spouse]').checked = true;
+      spouseField.style.display = 'block';
+      parentField.style.display = 'none';
+      spouseSelect.value = p.spouseTarget;
+      document.querySelector('input[name=spouseSide][value='+p.spouseSide+']').checked = true;
+    } else {
+      document.querySelector('input[name=relType][value=root]').checked = true;
+      parentField.style.display = 'none';
+      spouseField.style.display = 'none';
+    }
+    addBtn.textContent = '수정 완료';
+    nameInput.focus();
+  }
+
+  function deletePerson(id){
+    if(!confirm('이 인물과 하위에 연결된 모든 인물이 함께 삭제됩니다. 계속할까요?')) return;
+    var toDelete = new Set([id]);
+    var changed = true;
+    while(changed){
+      changed = false;
+      state.people.forEach(function(p){
+        if(!toDelete.has(p.id) && ((p.parentId && toDelete.has(p.parentId)) || (p.spouseTarget && toDelete.has(p.spouseTarget)))){
+          toDelete.add(p.id);
+          changed = true;
+        }
+      });
+    }
+    state.people = state.people.filter(function(p){ return !toDelete.has(p.id); });
+    if(editingId && toDelete.has(editingId)){
+      editingId = null;
+      addBtn.textContent = '인물 추가';
+    }
+    refreshDropdowns();
+    renderList();
+    renderChart();
+  }
+
+  function renderList(){
+    peopleCount.textContent = state.people.length;
+    if(state.people.length === 0){
+      peopleList.innerHTML = '<li class="empty-hint">아직 등록된 인물이 없습니다</li>';
+      return;
+    }
+    peopleList.innerHTML = state.people.map(function(p){
+      var c = COLORS[p.color] || COLORS.gold;
+      return '<li>' +
+        '<span class="name"><span class="swatch" style="background:'+c.border+'"></span>' +
+        (p.label ? '<span class="tag">'+escapeHtml(p.label)+'</span>' : '') +
+        escapeHtml(p.name) + (p.subtitle ? ' <span style="color:#a79c81">('+escapeHtml(p.subtitle)+')</span>' : '') +
+        '</span>' +
+        '<span class="actions">' +
+        '<button data-act="edit" data-id="'+p.id+'">수정</button>' +
+        '<button data-act="del" data-id="'+p.id+'">삭제</button>' +
+        '</span></li>';
+    }).join('');
+  }
+
+  peopleList.addEventListener('click', function(e){
+    var btn = e.target.closest('button');
+    if(!btn) return;
+    var id = btn.getAttribute('data-id');
+    if(btn.getAttribute('data-act') === 'edit') startEdit(id);
+    else deletePerson(id);
+  });
+
+  titleInput.addEventListener('input', function(){
+    titleDisplay.value = titleInput.value || '가문 인물관계도';
+  });
+
+  // ---------- layout (row = person + spouses; each member can independently have children) ----------
+  function getChildren(id){ return state.people.filter(function(p){ return p.parentId === id; }); }
+  function getSpousesBefore(id){ return state.people.filter(function(p){ return p.spouseTarget === id && p.spouseSide === 'before'; }); }
+  function getSpousesAfter(id){ return state.people.filter(function(p){ return p.spouseTarget === id && p.spouseSide === 'after'; }); }
+
+  function hasAnyDescendants(id){
+    if(getChildren(id).length > 0) return true;
+    var sps = getSpousesBefore(id).concat(getSpousesAfter(id));
+    return sps.some(function(sp){ return getChildren(sp.id).length > 0; });
+  }
+
+  function layoutRow(person){
+    var before = getSpousesBefore(person.id);
+    var after = getSpousesAfter(person.id);
+    var slotMembers = before.concat([person], after);
+    var slots = slotMembers.map(function(m){ return layoutMemberColumn(m); });
+    var totalWidth = slots.reduce(function(a, s){ return a + s.width; }, 0) + (slots.length - 1) * H_GAP;
+    var height = BOX_H;
+    slots.forEach(function(s){ if(s.height > height) height = s.height; });
+    var result = { person: person, slotMembers: slotMembers, slots: slots, totalWidth: totalWidth, height: height };
+    person._rowLayout = result;
+    return result;
+  }
+
+  function layoutMemberColumn(member){
+    var children = getChildren(member.id);
+    if(children.length === 0){
+      return { member: member, mode: 'leaf', width: BOX_W, height: BOX_H };
+    }
+    // only group as a compact vertical list when children are true dead-ends
+    // (no children of their own AND no children via any spouse of theirs) —
+    // otherwise they need their own branch so generations stay aligned in rows.
+    var allLeaf = children.length >= 2 && children.every(function(c){ return !hasAnyDescendants(c.id); });
+    if(allLeaf){
+      var leafRows = children.map(function(c){ return layoutRow(c); });
+      var w = BOX_W;
+      leafRows.forEach(function(r){ if(r.totalWidth > w) w = r.totalWidth; });
+      var listHeight = BOX_H + V_GAP;
+      leafRows.forEach(function(r, i){ listHeight += r.height + (i > 0 ? LIST_GAP : 0); });
+      return { member: member, mode: 'list', width: w, height: listHeight, leafRows: leafRows };
+    }
+    var childRows = children.map(function(c){ return layoutRow(c); });
+    var sum = childRows.reduce(function(a, r){ return a + r.totalWidth; }, 0) + (children.length - 1) * H_GAP;
+    var branchHeight = BOX_H + V_GAP;
+    childRows.forEach(function(r){ if(BOX_H + V_GAP + r.height > branchHeight) branchHeight = BOX_H + V_GAP + r.height; });
+    return { member: member, mode: 'branch', width: Math.max(BOX_W, sum), height: branchHeight, childRows: childRows };
+  }
+
+  function assignRow(rowResult, xLeft, y, boxes, lines){
+    var slots = rowResult.slots;
+    var slotMembers = rowResult.slotMembers;
+    var primary = rowResult.person;
+
+    // pass 1: place every box in the row first, so anchor midpoints can reference any member's box
+    var cx = xLeft;
+    var boxCenters = [];
+    slots.forEach(function(slot, i){
+      var member = slotMembers[i];
+      var slotCenterX = cx + slot.width / 2;
+      var bx = slotCenterX - BOX_W / 2;
+      member._box = { x: bx, y: y };
+      boxes.push({ person: member, x: bx, y: y });
+      boxCenters.push(bx + BOX_W / 2);
+      cx += slot.width + H_GAP;
+    });
+
+    if(slotMembers.length > 1){
+      lines.push({ type: 'hline', y: y + BOX_H / 2, x1: boxCenters[0], x2: boxCenters[boxCenters.length - 1] });
+    }
+
+    // pass 2: process each slot's descendants, using a center-of-marriage-line anchor when requested
+    slots.forEach(function(slot, i){
+      if(slot.mode === 'none' || slot.mode === 'leaf') return;
+      var member = slotMembers[i];
+      var memberCenterX = member._box.x + BOX_W / 2;
+      var anchorX = memberCenterX;
+      var anchorStartY = y + BOX_H;
+
+      if(member.centerAnchor){
+        if(member === primary){
+          var before = rowResult.before, after = rowResult.after;
+          if(before.length + after.length === 1){
+            var sp = before.length ? before[0] : after[0];
+            anchorX = (memberCenterX + (sp._box.x + BOX_W / 2)) / 2;
+            anchorStartY = y + BOX_H / 2;
+          }
+        } else {
+          anchorX = (memberCenterX + (primary._box.x + BOX_W / 2)) / 2;
+          anchorStartY = y + BOX_H / 2;
+        }
+      }
+
+      if(slot.mode === 'list'){
+        var ly = y + BOX_H + V_GAP;
+        lines.push({ type: 'vline', x: anchorX, y1: anchorStartY, y2: ly });
+        slot.leafRows.forEach(function(leafRow){
+          assignRow(leafRow, anchorX - leafRow.totalWidth / 2, ly, boxes, lines);
+          ly += leafRow.height + LIST_GAP;
+        });
+      } else if(slot.mode === 'branch'){
+        var totalCW = slot.childRows.reduce(function(a, r){ return a + r.totalWidth; }, 0) + (slot.childRows.length - 1) * H_GAP;
+        var childX = anchorX - totalCW / 2;
+        var childY = y + BOX_H + V_GAP;
+        var trunkMid = y + BOX_H + V_GAP / 2;
+        lines.push({ type: 'vline', x: anchorX, y1: anchorStartY, y2: trunkMid });
+
+        var centers = [];
+        slot.childRows.forEach(function(cr){
+          assignRow(cr, childX, childY, boxes, lines);
+          centers.push(cr.person._box.x + BOX_W / 2);
+          childX += cr.totalWidth + H_GAP;
+        });
+        var minC = Math.min.apply(null, centers), maxC = Math.max.apply(null, centers);
+        lines.push({ type: 'hline', y: trunkMid, x1: minC, x2: maxC });
+        centers.forEach(function(c2){ lines.push({ type: 'vline', x: c2, y1: trunkMid, y2: childY }); });
+      }
+    });
+  }
+
+  function buildLayout(){
+    var roots = state.people.filter(function(p){ return !p.parentId && !p.spouseTarget; });
+    var boxes = [], lines = [];
+    var x = 0;
+    roots.forEach(function(r){
+      var rowResult = layoutRow(r);
+      assignRow(rowResult, x, 0, boxes, lines);
+      x += rowResult.totalWidth + H_GAP * 2.5;
+    });
+    var maxX = 0, maxY = 0;
+    boxes.forEach(function(b){
+      maxX = Math.max(maxX, b.x + BOX_W);
+      maxY = Math.max(maxY, b.y + BOX_H);
+    });
+    return { boxes: boxes, lines: lines, width: maxX, height: maxY, roots: roots };
+  }
+
+  var STORAGE_KEY = 'relationChartData_v1';
+  var autosaveHint = document.getElementById('autosaveHint');
+
+  function autoSave(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ title: titleInput.value, people: state.people, nextId: state.nextId }));
+      var now = new Date();
+      var hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
+      if(autosaveHint) autosaveHint.textContent = '자동 저장됨 (' + hh + ':' + mm + ') · 이 브라우저에서 자동으로 이어집니다';
+    }catch(e){
+      if(autosaveHint) autosaveHint.textContent = '';
+    }
+  }
+
+  function tryRestoreAutosave(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return;
+      var data = JSON.parse(raw);
+      if(!data || !Array.isArray(data.people) || data.people.length === 0) return;
+      state.people = data.people;
+      state.nextId = data.nextId || (data.people.length + 1);
+      titleInput.value = data.title || '';
+      titleDisplay.value = data.title || '가문 인물관계도';
+      if(autosaveHint) autosaveHint.textContent = '이전 자동 저장 내용을 불러왔습니다';
+    }catch(e){}
+  }
+
+  function truncate(str, n){
+    if(!str) return '';
+    return str.length > n ? str.slice(0, n - 1) + '…' : str;
+  }
+
+  function cornerBrackets(bx, by, w, h, color){
+    var L = 7;
+    return (
+      '<path d="M'+(bx+L)+','+by+' L'+bx+','+by+' L'+bx+','+(by+L)+'" fill="none" stroke="'+color+'" stroke-width="1" opacity="0.85"/>' +
+      '<path d="M'+(bx+w-L)+','+by+' L'+(bx+w)+','+by+' L'+(bx+w)+','+(by+L)+'" fill="none" stroke="'+color+'" stroke-width="1" opacity="0.85"/>' +
+      '<path d="M'+(bx+L)+','+(by+h)+' L'+bx+','+(by+h)+' L'+bx+','+(by+h-L)+'" fill="none" stroke="'+color+'" stroke-width="1" opacity="0.85"/>' +
+      '<path d="M'+(bx+w-L)+','+(by+h)+' L'+(bx+w)+','+(by+h)+' L'+(bx+w)+','+(by+h-L)+'" fill="none" stroke="'+color+'" stroke-width="1" opacity="0.85"/>'
+    );
+  }
+
+  function renderChart(){
+    var layout = buildLayout();
+    if(layout.roots.length === 0){
+      svg.setAttribute('width', 480);
+      svg.setAttribute('height', 120);
+      svg.innerHTML = '<text x="240" y="60" text-anchor="middle" font-size="13" fill="#b3a884">왼쪽에서 인물을 추가하면 여기에 관계도가 그려집니다</text>';
+      return;
+    }
+    var w = layout.width + MARGIN * 2;
+    var h = layout.height + MARGIN * 2;
+    svg.setAttribute('width', w);
+    svg.setAttribute('height', h);
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+
+    var parts = [];
+    layout.lines.forEach(function(l){
+      if(l.type === 'hline'){
+        parts.push('<line x1="'+(l.x1+MARGIN)+'" y1="'+(l.y+MARGIN)+'" x2="'+(l.x2+MARGIN)+'" y2="'+(l.y+MARGIN)+'" stroke="#b08d46" stroke-width="1.2"/>');
+      } else {
+        parts.push('<line x1="'+(l.x+MARGIN)+'" y1="'+(l.y1+MARGIN)+'" x2="'+(l.x+MARGIN)+'" y2="'+(l.y2+MARGIN)+'" stroke="#b08d46" stroke-width="1.2"/>');
+      }
+    });
+
+    layout.boxes.forEach(function(b){
+      var p = b.person;
+      var c = COLORS[p.color] || COLORS.gold;
+      var bx = b.x + MARGIN, by = b.y + MARGIN;
+      var name = truncate(p.name, 8);
+      var sub = truncate(p.subtitle, 16);
+      var g = '<g><title>' + escapeHtml(p.name) + (p.subtitle ? ' (' + escapeHtml(p.subtitle) + ')' : '') + '</title>';
+      if(p.label){
+        var lbl = truncate(p.label, 10);
+        var rw = Math.max(40, lbl.length * 13 + 16);
+        var rx = bx + BOX_W/2 - rw/2, ry = by - 24;
+        g += '<rect x="'+rx+'" y="'+ry+'" width="'+rw+'" height="20" rx="3" fill="#fff8ea" stroke="'+c.border+'" stroke-width="1"/>';
+        g += '<text x="'+(rx+rw/2)+'" y="'+(ry+14)+'" text-anchor="middle" font-size="11" font-weight="700" fill="'+c.border+'">'+escapeHtml(lbl)+'</text>';
+      }
+      g += '<rect x="'+bx+'" y="'+by+'" width="'+BOX_W+'" height="'+BOX_H+'" rx="3" fill="'+c.bg+'" stroke="'+c.border+'" stroke-width="1.3"/>';
+      g += cornerBrackets(bx, by, BOX_W, BOX_H, c.border);
+      g += '<text x="'+(bx+BOX_W/2)+'" y="'+(by + (sub ? 23 : BOX_H/2+5))+'" text-anchor="middle" font-size="14" font-weight="700" fill="#2c2417">'+escapeHtml(name)+'</text>';
+      if(sub) g += '<text x="'+(bx+BOX_W/2)+'" y="'+(by+38)+'" text-anchor="middle" font-size="10.5" fill="#786c53">'+escapeHtml(sub)+'</text>';
+      g += '</g>';
+      parts.push(g);
+    });
+
+    svg.innerHTML = parts.join('');
+    autoSave();
+  }
+
+  // ---------- share / save helper (iOS-friendly) ----------
+  var shareModal = document.getElementById('shareModal');
+  var shareModalText = document.getElementById('shareModalText');
+  document.getElementById('shareModalClose').addEventListener('click', function(){
+    shareModal.classList.remove('show');
+  });
+
+  function saveOrShare(blob, filename, mime){
+    if(navigator.canShare && navigator.share){
+      var file = new File([blob], filename, { type: mime });
+      if(navigator.canShare({ files: [file] })){
+        navigator.share({ files: [file], title: filename }).catch(function(){});
+        return;
+      }
+    }
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+    shareModalText.textContent = '"' + filename + '" 다운로드를 시작했어요. iOS Safari에서는 공유 시트가 대신 뜰 수 있습니다.';
+    shareModal.classList.add('show');
+  }
+
+  document.getElementById('pngBtn').addEventListener('click', function(){
+    var layout = buildLayout();
+    if(layout.roots.length === 0){ alert('먼저 인물을 추가해주세요.'); return; }
+    var svgClone = svg.cloneNode(true);
+    var w = parseInt(svg.getAttribute('width'), 10);
+    var h = parseInt(svg.getAttribute('height'), 10);
+    svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    var xml = new XMLSerializer().serializeToString(svgClone);
+    var svgBlob = new Blob(['<?xml version="1.0" encoding="UTF-8"?>' + xml], { type: 'image/svg+xml;charset=utf-8' });
+    var url = URL.createObjectURL(svgBlob);
+    var img = new Image();
+    img.onload = function(){
+      var pad = 60, titleH = 110;
+      var canvas = document.createElement('canvas');
+      canvas.width = (w + pad * 2) * 2;
+      canvas.height = (h + pad * 2 + titleH) * 2;
+      var ctx = canvas.getContext('2d');
+      ctx.scale(2, 2);
+      var grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+      grad.addColorStop(0, '#fdfbf4');
+      grad.addColorStop(1, '#f7f0dc');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w + pad * 2, h + pad * 2 + titleH);
+      ctx.strokeStyle = '#c9a227';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(16, 16, w + pad * 2 - 32, h + pad * 2 + titleH - 32);
+
+      var titleText = titleDisplay.value || '가문 인물관계도';
+      ctx.font = '700 28px "Batang","맑은 고딕",serif';
+      var textW = ctx.measureText(titleText).width;
+      var boxPadX = 46, boxPadY = 15;
+      var boxW = textW + boxPadX * 2;
+      var boxH = 28 + boxPadY * 2;
+      var boxX = (w + pad * 2) / 2 - boxW / 2;
+      var boxY = 34;
+      ctx.fillStyle = '#fffdf8';
+      ctx.fillRect(boxX, boxY, boxW, boxH);
+      ctx.strokeStyle = '#8a6a1f';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(boxX, boxY, boxW, boxH);
+      ctx.strokeStyle = '#c9a227';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(boxX - 5.5, boxY - 5.5, boxW + 11, boxH + 11);
+      ctx.fillStyle = '#8a6a1f';
+      ctx.textAlign = 'center';
+      ctx.fillText(titleText, (w + pad * 2) / 2, boxY + boxH / 2 + 10);
+      ctx.font = '13px sans-serif';
+      ctx.fillText('❖', boxX + 18, boxY + boxH / 2 + 5);
+      ctx.fillText('❖', boxX + boxW - 18, boxY + boxH / 2 + 5);
+
+      ctx.drawImage(img, pad, titleH + pad / 2, w, h);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(function(blob){
+        saveOrShare(blob, (titleDisplay.value || 'relation-chart') + '.png', 'image/png');
+      }, 'image/png');
+    };
+    img.src = url;
+  });
+
+  // ---------- code viewer (CodePen-friendly) ----------
+  var codeModal = document.getElementById('codeModal');
+  var codePre = document.getElementById('codePre');
+  var codeTabs = document.querySelectorAll('.code-tabs button');
+  var currentTab = 'html';
+
+  function buildCodeTabs(){
+    var htmlCode = document.documentElement.outerHTML;
+    var cssMatch = htmlCode.match(/<style>([\s\S]*?)<\/style>/);
+    var jsData = JSON.stringify({ title: titleInput.value, people: state.people }, null, 2);
+    return {
+      html: '<!-- 이 파일 전체를 저장하면 그대로 동작하는 완성된 웹앱입니다 -->\n' + htmlCode,
+      css: cssMatch ? cssMatch[1].trim() : '',
+      js: '// 현재 등록된 인물 데이터 (state.people)\nvar chartData = ' + jsData + ';'
+    };
+  }
+
+  document.getElementById('codeBtn').addEventListener('click', function(){
+    var codes = buildCodeTabs();
+    codePre.textContent = codes[currentTab];
+    codeModal.classList.add('show');
+  });
+  codeTabs.forEach(function(btn){
+    btn.addEventListener('click', function(){
+      codeTabs.forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentTab = btn.getAttribute('data-tab');
+      codePre.textContent = buildCodeTabs()[currentTab];
+    });
+  });
+  document.getElementById('codeCloseBtn').addEventListener('click', function(){
+    codeModal.classList.remove('show');
+  });
+  document.getElementById('codeCopyBtn').addEventListener('click', function(){
+    navigator.clipboard.writeText(codePre.textContent).then(function(){
+      var btn = document.getElementById('codeCopyBtn');
+      var old = btn.textContent;
+      btn.textContent = '복사됨!';
+      setTimeout(function(){ btn.textContent = old; }, 1500);
+    });
+  });
+
+  // ---------- example / reset ----------
+  document.getElementById('saveJsonBtn').addEventListener('click', function(){
+    if(state.people.length === 0){ alert('저장할 인물이 없습니다.'); return; }
+    var data = { title: titleInput.value, people: state.people, nextId: state.nextId };
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    saveOrShare(blob, (titleInput.value || 'relation-chart') + '.json', 'application/json');
+  });
+
+  document.getElementById('loadJsonBtn').addEventListener('click', function(){
+    document.getElementById('loadJsonInput').click();
+  });
+
+  document.getElementById('loadJsonInput').addEventListener('change', function(e){
+    var file = e.target.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      try{
+        var data = JSON.parse(reader.result);
+        if(!data || !Array.isArray(data.people)) throw new Error('bad format');
+        if(state.people.length && !confirm('현재 데이터를 불러온 파일 내용으로 덮어씁니다. 계속할까요?')) return;
+        state.people = data.people;
+        state.nextId = data.nextId || (data.people.length + 1);
+        titleInput.value = data.title || '';
+        titleDisplay.value = data.title || '가문 인물관계도';
+        editingId = null;
+        addBtn.textContent = '인물 추가';
+        refreshDropdowns();
+        renderList();
+        renderChart();
+      }catch(err){
+        alert('파일을 읽을 수 없습니다. 이 웹앱에서 저장한 JSON 파일인지 확인해주세요.');
+      }
+      document.getElementById('loadJsonInput').value = '';
+    };
+    reader.readAsText(file);
+  });
+
+  document.getElementById('exampleBtn').addEventListener('click', function(){
+    if(state.people.length && !confirm('현재 데이터를 예제로 덮어씁니다. 계속할까요?')) return;
+    state.nextId = 1;
+    function nid(){ return 'p' + (state.nextId++); }
+
+    var jin = { id: nid(), name: '사진', subtitle: '노국공', label: '', color: 'gold', parentId: null, spouseTarget: null, spouseSide: null };
+    var han = { id: nid(), name: '한씨', subtitle: '죽은 전처', label: '', color: 'purple', parentId: null, spouseTarget: jin.id, spouseSide: 'before' };
+    var seo = { id: nid(), name: '서씨', subtitle: '사 노부인', label: '', color: 'purple', parentId: null, spouseTarget: jin.id, spouseSide: 'after' };
+
+    var dae = { id: nid(), name: '대방', subtitle: '', label: '', color: 'blue', parentId: jin.id, spouseTarget: null, spouseSide: null };
+    var i2  = { id: nid(), name: '이방', subtitle: '', label: '', color: 'blue', parentId: jin.id, spouseTarget: null, spouseSide: null };
+    var sam = { id: nid(), name: '삼방', subtitle: '', label: '', color: 'blue', parentId: jin.id, spouseTarget: null, spouseSide: null };
+
+    // 대방의 아들 사윤백: 부인이 둘(왕씨/이씨)이고, 각 부인 소생 자녀가 따로 갈라지는 예시
+    var yb = { id: nid(), name: '사윤백', subtitle: '문국공', label: '대방', color: 'green', parentId: dae.id, spouseTarget: null, spouseSide: null };
+    var wang = { id: nid(), name: '왕씨', subtitle: '본처', label: '', color: 'red', parentId: null, spouseTarget: yb.id, spouseSide: 'after' };
+    var lee2 = { id: nid(), name: '이씨', subtitle: '후처', label: '', color: 'red', parentId: null, spouseTarget: yb.id, spouseSide: 'after' };
+
+    var wangKids = [
+      { name: '사용옥', subtitle: '평원/문국공부 세자' },
+      { name: '사경서', subtitle: '이소저/가짜딸1' }
+    ].map(function(o){ return { id: nid(), name: o.name, subtitle: o.subtitle, label:'', color: 'gold', parentId: wang.id, spouseTarget: null, spouseSide: null }; });
+
+    var leeKids = [
+      { name: '허장녕', subtitle: '허남/진짜딸' },
+      { name: '사용명', subtitle: '오공자' }
+    ].map(function(o){ return { id: nid(), name: o.name, subtitle: o.subtitle, label:'', color: 'gold', parentId: lee2.id, spouseTarget: null, spouseSide: null }; });
+
+    var ya = { id: nid(), name: '사윤안', subtitle: '', label: '이방', color: 'green', parentId: i2.id, spouseTarget: null, spouseSide: null, centerAnchor: true };
+    var jo = { id: nid(), name: '조씨', subtitle: '', label: '', color: 'red', parentId: null, spouseTarget: ya.id, spouseSide: 'after' };
+    var leafOf_ya = [
+      { name: '사용비', subtitle: '회근,근유공자' },
+      { name: '사용운', subtitle: '대소저' },
+      { name: '사공윤', subtitle: '대소저' }
+    ].map(function(o){ return { id: nid(), name: o.name, subtitle: o.subtitle, label:'', color: 'gold', parentId: ya.id, spouseTarget: null, spouseSide: null }; });
+
+    var samno = { id: nid(), name: '삼노야', subtitle: '', label: '삼방', color: 'green', parentId: sam.id, spouseTarget: null, spouseSide: null, centerAnchor: true };
+    var maeng = { id: nid(), name: '맹씨', subtitle: '', label: '', color: 'red', parentId: null, spouseTarget: samno.id, spouseSide: 'after' };
+    var leafOf_samno = [
+      { name: '사경문', subtitle: '사소저' },
+      { name: '육공자', subtitle: '' }
+    ].map(function(o){ return { id: nid(), name: o.name, subtitle: o.subtitle, label:'', color: 'gold', parentId: samno.id, spouseTarget: null, spouseSide: null }; });
+
+    state.people = [jin, han, seo, dae, i2, sam, yb, wang, lee2, ya, jo, samno, maeng]
+      .concat(wangKids, leeKids, leafOf_ya, leafOf_samno);
+
+    titleInput.value = '문국공부';
+    titleDisplay.value = '문국공부';
+    refreshDropdowns();
+    renderList();
+    renderChart();
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', function(){
+    if(!confirm('모든 인물 데이터를 삭제할까요?')) return;
+    state.people = [];
+    state.nextId = 1;
+    editingId = null;
+    addBtn.textContent = '인물 추가';
+    titleInput.value = '';
+    titleDisplay.value = '가문 인물관계도';
+    try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
+    if(autosaveHint) autosaveHint.textContent = '';
+    refreshDropdowns();
+    renderList();
+    renderChart();
+  });
+
+  tryRestoreAutosave();
+  refreshDropdowns();
+  renderList();
+  renderChart();
+})();
+</script>
+</body>
+</html>
