@@ -15,7 +15,8 @@
   --r:10px;--sh:0 2px 8px rgba(26,95,168,.10);
 }
 *{box-sizing:border-box;margin:0;padding:0;}
-body{background:var(--bg);color:var(--tx);font-family:'Noto Sans KR',sans-serif;font-size:14px;min-height:100vh;display:flex;flex-direction:column;}
+html{overflow-x:hidden;width:100%;}
+body{background:var(--bg);color:var(--tx);font-family:'Noto Sans KR',sans-serif;font-size:14px;min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;width:100%;}
 
 header{background:linear-gradient(135deg,#1a5fa8 0%,#2478cc 100%);padding:13px 20px;display:flex;align-items:center;gap:10px;flex-shrink:0;box-shadow:0 2px 10px rgba(26,95,168,.25);}
 .logo{font-family:'DM Mono',monospace;font-size:14px;font-weight:500;color:#fff;letter-spacing:.08em;flex:1;}
@@ -491,6 +492,7 @@ var S={
   coverData:null,
   imgMap:{},
   tocOverrides:{},
+  volumeFlags:{}, // 파일이 여러 회차로 분리될 때, 이 파일을 "단행본"(상위 권 목차)으로 묶을지 여부. 체크된 파일 인덱스만 true로 기록.
   coverInserts:[]
 };
 
@@ -965,19 +967,22 @@ function dD(e){
   }
   S.imgMap=reorderMap(S.imgMap,dragSrc,to);
   S.tocOverrides=reorderMap(S.tocOverrides,dragSrc,to);
+  S.volumeFlags=reorderMap(S.volumeFlags,dragSrc,to);
   renderList();renderToc();renderImgPanel();
 }
 function dE(){document.querySelectorAll('.file-item').forEach(function(el){el.classList.remove('dragging','drag-target');});dragSrc=null;}
 
 function removeFile(i){
-  var newToc={};
+  var newToc={},newVol={};
   reindexImgMapAfterDelete(i);
   Object.keys(S.tocOverrides).forEach(function(k){var ki=parseInt(k);if(ki<i)newToc[ki]=S.tocOverrides[ki];else if(ki>i)newToc[ki-1]=S.tocOverrides[ki];});
   S.tocOverrides=newToc;
+  Object.keys(S.volumeFlags).forEach(function(k){var ki=parseInt(k);if(ki<i)newVol[ki]=S.volumeFlags[ki];else if(ki>i)newVol[ki-1]=S.volumeFlags[ki];});
+  S.volumeFlags=newVol;
   S.files.splice(i,1);renderList();renderToc();renderImgPanel();if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();
 }
 function clearAll(){
-  S.files=[];S.imgMap={};S.tocOverrides={};
+  S.files=[];S.imgMap={};S.tocOverrides={};S.volumeFlags={};
   renderList();renderToc();renderImgPanel();
   var t=document.getElementById('title'),a=document.getElementById('author'),c=document.getElementById('chk-complete');
   if(t)delete t.dataset.userEdited;if(a)delete a.dataset.userEdited;if(c)delete c.dataset.userSet;
@@ -1079,12 +1084,28 @@ function renderToc(){
       row.appendChild(badge2);
     }
 
-    // 분리될 파일 개수 배지
+    // 분리될 파일 개수 배지 + 단행본(계층 목차) 체크박스
     if(isHtmlFile&&segs.length>=2&&pageType===null){
       var hbadge=document.createElement('span');
       hbadge.style.cssText='font-size:10px;color:var(--ac);font-family:\'DM Mono\',monospace;flex-shrink:0;background:var(--acl);padding:1px 5px;border-radius:4px;';
       hbadge.textContent=segs.length+'개 파일로 분리';
       row.appendChild(hbadge);
+
+      var volLabel=document.createElement('label');
+      volLabel.style.cssText='display:flex;align-items:center;gap:3px;flex-shrink:0;font-size:10px;color:var(--mu);cursor:pointer;font-family:\'DM Mono\',monospace;';
+      volLabel.title='체크하면 이 파일 안의 회차들이 이 파일명을 상위(권) 목차로 묶는 계층 목차가 됩니다. 체크 해제 시(기본값) 회차들이 각각 독립된 목차 항목이 됩니다.';
+      var volChk=document.createElement('input');
+      volChk.type='checkbox';volChk.checked=!!S.volumeFlags[i];
+      volChk.style.cssText='width:13px;height:13px;cursor:pointer;accent-color:var(--ac);';
+      (function(idx){
+        volChk.addEventListener('change',function(){
+          if(this.checked)S.volumeFlags[idx]=true;else delete S.volumeFlags[idx];
+          renderToc();
+        });
+      })(i);
+      volLabel.appendChild(volChk);
+      volLabel.appendChild(document.createTextNode('단행본'));
+      row.appendChild(volLabel);
     }
 
     var del=document.createElement('button');
@@ -1093,28 +1114,35 @@ function renderToc(){
     del.textContent='✕';del.title='이 챕터를 파일 목록에서 삭제';
     (function(idx){
       del.addEventListener('click',function(){
-        var newToc={};
+        var newToc={},newVol={};
         reindexImgMapAfterDelete(idx);
         Object.keys(S.tocOverrides).forEach(function(k){var ki=parseInt(k);if(ki<idx)newToc[ki]=S.tocOverrides[ki];else if(ki>idx)newToc[ki-1]=S.tocOverrides[ki];});
         S.tocOverrides=newToc;
+        Object.keys(S.volumeFlags).forEach(function(k){var ki=parseInt(k);if(ki<idx)newVol[ki]=S.volumeFlags[ki];else if(ki>idx)newVol[ki-1]=S.volumeFlags[ki];});
+        S.volumeFlags=newVol;
         S.files.splice(idx,1);renderList();renderToc();renderImgPanel();if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();applyAutoCompletion();applyAutoEpisode();refreshDetectedHColor();toast('챕터 삭제됨','ok');
       });
     })(i);
     row.appendChild(del);
     wrap.appendChild(row);
 
-    // 계층 목차: 실제 분리될 파일이 2개 이상일 때만 하위 목차로 펼쳐 보여줌
+    // 이 파일이 여러 회차로 분리되는 경우, 실제 회차 목록을 펼쳐 보여줌.
+    // "단행본" 체크 여부에 따라 계층(└ 들여쓰기, 상위 목차로 묶임) / 평면(독립된 목차 항목) 표시가 달라진다.
     if(isHtmlFile&&pageType===null&&segs.length>=2){
+      var isVolume=!!S.volumeFlags[i];
       var dedupNums={};fileDedupLog.forEach(function(e){dedupNums[e.num]=e;});
       segs.forEach(function(seg){
         var subRow=document.createElement('div');
         subRow.className='toc-sub-row';
-        subRow.style.cssText='display:flex;align-items:center;gap:4px;padding:2px 7px 2px 20px;';
-        var arrow=document.createElement('span');arrow.className='toc-sub-arrow';arrow.textContent='└';
+        subRow.style.cssText='display:flex;align-items:center;gap:4px;padding:2px 7px 2px '+(isVolume?'20px':'7px')+';';
+        if(isVolume){
+          var arrow=document.createElement('span');arrow.className='toc-sub-arrow';arrow.textContent='└';
+          subRow.appendChild(arrow);
+        }
         var txt=document.createElement('span');
         txt.style.cssText='font-size:11px;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;';
         txt.textContent=seg.title;
-        subRow.appendChild(arrow);subRow.appendChild(txt);
+        subRow.appendChild(txt);
         var dEntry=dedupNums[extractNum(seg.title)];
         if(dEntry){
           var dbadge=document.createElement('span');
@@ -1733,10 +1761,12 @@ function deleteCheckedCoverCleanItems(){
   // 파일 전체 삭제 (표지/판권 파일) — 뒤에서부터
   wholeFileDel=Array.from(new Set(wholeFileDel)).sort(function(a,b){return b-a;});
   wholeFileDel.forEach(function(idx){
-    var newToc={};
+    var newToc={},newVol={};
     reindexImgMapAfterDelete(idx);
     Object.keys(S.tocOverrides).forEach(function(k){var ki=parseInt(k);if(ki<idx)newToc[ki]=S.tocOverrides[ki];else if(ki>idx)newToc[ki-1]=S.tocOverrides[ki];});
     S.tocOverrides=newToc;
+    Object.keys(S.volumeFlags).forEach(function(k){var ki=parseInt(k);if(ki<idx)newVol[ki]=S.volumeFlags[ki];else if(ki>idx)newVol[ki-1]=S.volumeFlags[ki];});
+    S.volumeFlags=newVol;
     S.files.splice(idx,1);
   });
   document.getElementById('cover-clean-select-all').checked=false;
@@ -2345,11 +2375,19 @@ function isWrapperDiv(el){
 }
 function flattenToUnits(root){
   var units=[];
+  // 카카오페이지 캡처본은 실제 회차 제목에 항상 title_no 클래스가 붙는다(예: <h3 class="title_no">182화</h3>).
+  // 반면 본문 중 인용된 기사 제목 등(예: class="txt_gl", 그라데이션 스타일)도 h1~h4 태그를 쓰는 경우가 있어
+  // "태그가 h1~h4면 무조건 회차 제목"으로 보면 본문이 회차로 오인식된다.
+  // 문서 안에 title_no 클래스가 하나라도 있으면 그것만 회차 제목으로 인정하고,
+  // (title_no가 전혀 없는 구버전/다른 형식 캡처와의 호환을 위해) 없으면 기존처럼 모든 h1~h4를 인정한다.
+  var hasTitleNoClass=!!root.querySelector('.title_no');
   function walk(node){
     Array.from(node.children).forEach(function(el){
       var titleAttr=el.getAttribute?(el.getAttribute('title')||''):'';
       var isFakeHeading=/저작권|판권/.test(titleAttr);
-      if(/^H[1-4]$/.test(el.tagName)&&!isFakeHeading){
+      var elIsTitleNo=el.classList&&el.classList.contains('title_no');
+      var isHeadingTag=/^H[1-4]$/.test(el.tagName)&&!isFakeHeading&&(hasTitleNoClass?elIsTitleNo:true);
+      if(isHeadingTag){
         units.push({type:'heading',html:el.outerHTML,text:el.textContent.trim()});
       }else if(isWrapperDiv(el)){
         walk(el);
@@ -2392,7 +2430,13 @@ function buildSegments(tmpC,titlePageToggle,fallbackTitle){
     if(u.type==='heading'){
       closeCurrent();
       var h=carry+u.html;carry='';
-      if(pendingTitle){pendingTitle.html+=h;pendingTitle.text=pendingTitle.text||u.text;}
+      // 헤딩이 연속으로 나오는 경우(예: 아치/시리즈 라벨 h3 다음에 실제 회차번호 h3가 바로 이어짐)
+      // 첫 헤딩 텍스트만 남기면 "특별 외전(로판 AU)"처럼 회차 번호가 없는 제목만 남아
+      // 회차 자동감지/중복제거/정렬이 다 깨진다. 두 텍스트가 다르면 이어붙여서 번호를 보존한다.
+      if(pendingTitle){
+        pendingTitle.html+=h;
+        if(u.text&&u.text!==pendingTitle.text)pendingTitle.text=pendingTitle.text?(pendingTitle.text+' '+u.text):u.text;
+      }
       else pendingTitle={html:h,text:u.text};
     }else{
       if(pendingTitle){
@@ -2615,14 +2659,15 @@ function makeChapters(files,opts){
       return;
     }
 
-    // 세그먼트 2개 이상 — 실제로 파일 분리, 원본 파일명을 상위(권) 목차로 묶는다
+    // 세그먼트 2개 이상 — 실제로 파일 분리. "단행본" 체크된 파일만 원본 파일명을 상위(권) 목차로 묶는다.
+    var useVolume=!!S.volumeFlags[i];
     segments.forEach(function(seg,j){
       result.push({
         id:'ch_'+safeId+'_'+i+'_'+j,
         file:safeId+'_'+i+'_'+j+'.xhtml',
         title:seg.title||('섹션 '+(j+1)),
         content:seg.html,
-        parentLabel:stem
+        parentLabel:useVolume?stem:null
       });
     });
   });
