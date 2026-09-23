@@ -6,135 +6,147 @@
 <title>EPUB 생성기</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Noto+Serif+KR:wght@500;600;700&family=DM+Mono:wght@400;500&display=swap');
 :root{
-  --bg:#e8f0f8;--surf:#ffffff;--s2:#f0f5fb;--bd:#c0d4ea;
-  --ac:#1a5fa8;--acl:#ddeeff;--acd:#134a86;
-  --tx:#0d1f35;--mu:#5a7a9a;
-  --ok:#1a8c5a;--wn:#b06010;--er:#b02020;
-  --r:10px;--sh:0 2px 8px rgba(26,95,168,.10);
+  --bg:#FBF6F2;--surf:#FFFDFB;--s2:#F2E4DF;--bd:#E7D3CD;
+  --ac:#8C2F45;--acl:#F7E8EA;--acd:#5E1E30;
+  --tx:#2A1E24;--mu:#7C6670;
+  --ok:#4C7A5B;--wn:#AD7A2E;--er:#A23B3B;
+  --r:16px;--sh:0 3px 14px rgba(140,47,69,.08);
+  --serif:'Noto Serif KR',serif;--sans:'Noto Sans KR',sans-serif;
 }
-*{box-sizing:border-box;margin:0;padding:0;}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 html{overflow-x:hidden;width:100%;}
-body{background:var(--bg);color:var(--tx);font-family:'Noto Sans KR',sans-serif;font-size:14px;min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;width:100%;}
+body{background:var(--bg);color:var(--tx);font-family:var(--sans);font-size:15.5px;line-height:1.6;min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden;width:100%;}
+/* 앱 전역에서 좁고 촘촘한 DM Mono 라벨을 쓰던 자리는 가독성을 위해 기본 산세리프로 통일 (숫자 정렬이 필요한 로그·프리뷰 영역은 제외) */
+[style*="DM Mono"]{font-family:var(--sans)!important;}
 
-header{background:linear-gradient(135deg,#1a5fa8 0%,#2478cc 100%);padding:13px 20px;display:flex;align-items:center;gap:10px;flex-shrink:0;box-shadow:0 2px 10px rgba(26,95,168,.25);}
-.logo{font-family:'DM Mono',monospace;font-size:14px;font-weight:500;color:#fff;letter-spacing:.08em;flex:1;}
-.logo span{opacity:.55;}
-.hbadge{background:rgba(255,255,255,.18);color:#fff;font-family:'DM Mono',monospace;font-size:10px;padding:3px 10px;border-radius:20px;letter-spacing:.05em;}
+header{background:linear-gradient(135deg,#8C2F45 0%,#5E1E30 100%);padding:18px 20px;display:flex;align-items:center;gap:10px;flex-shrink:0;box-shadow:0 2px 14px rgba(94,30,48,.25);}
+.logo{font-family:var(--serif);font-size:18px;font-weight:600;color:#fff;letter-spacing:.02em;flex:1;}
+.logo span{opacity:.65;font-weight:500;}
+.hbadge{background:rgba(255,255,255,.2);color:#fff;font-family:var(--sans);font-size:11.5px;padding:4px 11px;border-radius:20px;letter-spacing:.03em;}
 
-.page{max-width:900px;margin:0 auto;padding:18px 16px;display:flex;flex-direction:column;gap:14px;}
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.page{max-width:920px;margin:0 auto;padding:20px 16px;display:flex;flex-direction:column;gap:16px;}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 @media(max-width:640px){.two-col{grid-template-columns:1fr;}}
 
-.card{background:var(--surf);border:1px solid var(--bd);border-radius:var(--r);padding:16px;box-shadow:var(--sh);}
-.card-hd{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--mu);margin-bottom:12px;display:flex;align-items:center;gap:7px;}
-.snum{background:var(--ac);color:#fff;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;}
+.card{background:var(--surf);border:1px solid var(--bd);border-radius:var(--r);padding:20px 18px;box-shadow:var(--sh);}
+.card-hd{font-family:var(--serif);font-size:16.5px;font-weight:600;letter-spacing:.01em;color:var(--tx);margin-bottom:14px;display:flex;align-items:center;gap:10px;}
+.snum{background:var(--acl);color:var(--ac);width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;font-family:var(--serif);flex-shrink:0;}
 
-.drop-zone{border:2px dashed var(--bd);border-radius:var(--r);padding:22px 14px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;background:var(--s2);display:block;}
+.drop-zone{border:1.5px dashed var(--bd);border-radius:var(--r);padding:24px 14px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;background:var(--s2);display:block;}
 .drop-zone:hover,.drop-zone.drag-over{border-color:var(--ac);background:var(--acl);}
-.drop-zone p{color:var(--mu);font-size:13px;line-height:1.8;}
+.drop-zone p{color:var(--mu);font-size:14px;line-height:1.85;}
 .drop-zone strong{color:var(--ac);}
 input[type="file"]{position:absolute;left:-9999px;width:1px;height:1px;opacity:0;}
 
-.file-list-wrap{border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;max-height:260px;overflow-y:auto;background:var(--s2);}
+.file-list-wrap{border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;max-height:280px;overflow-y:auto;background:var(--s2);}
 .file-list-wrap::-webkit-scrollbar{width:4px;}
 .file-list-wrap::-webkit-scrollbar-thumb{background:var(--bd);border-radius:2px;}
 .file-list{list-style:none;}
-.file-item{display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--surf);border-bottom:1px solid var(--bd);cursor:grab;user-select:none;transition:background .12s;}
+.file-item{display:flex;align-items:center;gap:7px;padding:10px 11px;background:var(--surf);border-bottom:1px solid var(--bd);cursor:grab;user-select:none;transition:background .12s;}
 .file-item:last-child{border-bottom:none;}
 .file-item.dragging{opacity:.35;}
 .file-item.drag-target{border-top:2px solid var(--ac);background:var(--acl);}
-.file-handle{color:var(--bd);font-size:16px;opacity:.6;flex-shrink:0;}
-.file-num{font-family:'DM Mono',monospace;font-size:10px;color:var(--mu);min-width:22px;}
-.file-name{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.file-del{background:none;border:none;color:var(--bd);cursor:pointer;font-size:14px;padding:2px 4px;transition:color .12s;flex-shrink:0;border-radius:4px;}
-.file-del:hover{color:var(--er);background:#fee;}
-.file-empty{padding:18px;text-align:center;color:var(--mu);font-size:12px;font-family:'DM Mono',monospace;}
+.file-handle{color:var(--bd);font-size:17px;opacity:.7;flex-shrink:0;}
+.file-num{font-family:var(--sans);font-size:11.5px;color:var(--mu);min-width:24px;}
+.file-name{flex:1;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.file-del{background:none;border:none;color:var(--bd);cursor:pointer;font-size:15px;padding:2px 5px;transition:color .12s;flex-shrink:0;border-radius:4px;}
+.file-del:hover{color:var(--er);background:var(--acl);}
+.file-empty{padding:20px;text-align:center;color:var(--mu);font-size:13px;font-family:var(--sans);}
 
-.field{display:flex;flex-direction:column;gap:5px;}
-.field label{font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--mu);}
-.field input[type=text]{background:var(--s2);border:1.5px solid var(--bd);border-radius:8px;color:var(--tx);font-family:'Noto Sans KR',sans-serif;font-size:14px;padding:10px 12px;outline:none;width:100%;transition:border-color .18s;}
-.field input[type=text]:focus{border-color:var(--ac);}
+.field{display:flex;flex-direction:column;gap:6px;}
+.field label{font-size:12.5px;font-family:var(--sans);letter-spacing:0;color:var(--mu);font-weight:500;}
+.field input[type=text]{background:var(--s2);border:1.5px solid var(--bd);border-radius:10px;color:var(--tx);font-family:var(--sans);font-size:14.5px;padding:11px 13px;outline:none;width:100%;transition:border-color .18s,background .18s;}
+.field input[type=text]:focus{border-color:var(--ac);background:var(--surf);}
 
-.tog-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;}
-.tog-info .tl{font-size:13px;color:var(--tx);font-weight:500;}
-.tog-info .td{font-size:11px;color:var(--mu);margin-top:2px;font-family:'DM Mono',monospace;}
+.tog-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;}
+.tog-info .tl{font-size:14px;color:var(--tx);font-weight:500;}
+.tog-info .td{font-size:12px;color:var(--mu);margin-top:2px;font-family:var(--sans);}
 .tog{position:relative;width:42px;height:24px;flex-shrink:0;}
 .tog input{opacity:0;width:0;height:0;}
-.tog-sl{position:absolute;inset:0;background:#c8d8e8;border-radius:24px;cursor:pointer;transition:background .2s;}
-.tog-sl::before{content:'';position:absolute;left:3px;top:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);}
-.tog input:checked+.tog-sl{background:var(--ac);}
+.tog-sl{position:absolute;inset:0;background:var(--s2);border:1px solid var(--bd);border-radius:24px;cursor:pointer;transition:background .2s;}
+.tog-sl::before{content:'';position:absolute;left:2px;top:2px;width:18px;height:18px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);}
+.tog input:checked+.tog-sl{background:var(--ac);border-color:var(--ac);}
 .tog input:checked+.tog-sl::before{transform:translateX(18px);}
 
-.sek{background:var(--s2);border:1px solid var(--bd);border-radius:8px;padding:12px;}
-.sek-title{font-family:'DM Mono',monospace;font-size:10px;color:var(--ac);letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px;font-weight:500;}
-.sek-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-.sek-row{display:flex;flex-direction:column;gap:4px;}
-.sek-row label{font-family:'DM Mono',monospace;font-size:10px;color:var(--mu);letter-spacing:.06em;}
-.sek-row input[type=text]{background:var(--surf);border:1.5px solid var(--bd);border-radius:6px;font-size:12px;padding:7px 9px;outline:none;color:var(--tx);width:100%;font-family:'DM Mono',monospace;transition:border-color .15s;}
+.sek{background:var(--s2);border:1px solid var(--bd);border-radius:12px;padding:14px;}
+.sek-title{font-family:var(--serif);font-size:13.5px;font-weight:600;color:var(--ac);letter-spacing:0;text-transform:none;margin-bottom:11px;}
+.sek-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+.sek-row{display:flex;flex-direction:column;gap:5px;}
+.sek-row label{font-family:var(--sans);font-size:11.5px;color:var(--mu);letter-spacing:0;}
+.sek-row input[type=text]{background:var(--surf);border:1.5px solid var(--bd);border-radius:8px;font-size:13px;padding:8px 10px;outline:none;color:var(--tx);width:100%;font-family:var(--sans);transition:border-color .15s;}
 .sek-row input[type=text]:focus{border-color:var(--ac);}
 .sek-row input:disabled,.color-pair input:disabled{opacity:.4;cursor:not-allowed;}
-.sek-row input[type=color]{width:100%;height:34px;padding:2px 4px;border:1.5px solid var(--bd);border-radius:6px;cursor:pointer;background:var(--surf);}
-.color-pair{display:flex;gap:6px;align-items:center;}
-.color-pair input[type=color]{width:38px;height:34px;padding:2px;border:1.5px solid var(--bd);border-radius:6px;cursor:pointer;background:var(--surf);flex-shrink:0;}
-.color-pair input[type=text]{flex:1;background:var(--surf);border:1.5px solid var(--bd);border-radius:6px;font-size:12px;padding:7px 9px;outline:none;color:var(--tx);font-family:'DM Mono',monospace;transition:border-color .15s;}
+.sek-row input[type=color]{width:100%;height:36px;padding:2px 4px;border:1.5px solid var(--bd);border-radius:8px;cursor:pointer;background:var(--surf);}
+.color-pair{display:flex;gap:7px;align-items:center;}
+.color-pair input[type=color]{width:40px;height:36px;padding:2px;border:1.5px solid var(--bd);border-radius:8px;cursor:pointer;background:var(--surf);flex-shrink:0;}
+.color-pair input[type=text]{flex:1;background:var(--surf);border:1.5px solid var(--bd);border-radius:8px;font-size:13px;padding:8px 10px;outline:none;color:var(--tx);font-family:var(--sans);transition:border-color .15s;}
 .color-pair input[type=text]:focus{border-color:var(--ac);}
 
-.seq-result{border-radius:8px;padding:10px 12px;font-family:'DM Mono',monospace;font-size:11px;line-height:1.9;white-space:pre-wrap;display:none;}
-.seq-result.ok{background:#e4f4ed;border:1px solid #a0d4b8;color:var(--ok);display:block;}
-.seq-result.warn{background:#fff8e0;border:1px solid #e0c060;color:var(--wn);display:block;}
-.seq-result.error{background:#fee;border:1px solid #fcc;color:var(--er);display:block;}
+/* 장면전환 치환 아이콘 팔레트 (rf_epub_studio 스타일) */
+.icon-palette{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;}
+.icon-chip{padding:10px 15px;border-radius:10px;border:1.5px solid var(--bd);background:var(--surf);font-size:14.5px;color:var(--tx);cursor:pointer;letter-spacing:.12em;transition:all .12s;}
+.icon-chip:hover{border-color:var(--ac);}
+.icon-chip.sel{border-color:var(--ac);background:var(--acl);color:var(--acd);font-weight:600;}
+.icon-chip.none-chip{letter-spacing:0;font-size:12.5px;color:var(--mu);}
+.icon-chip.none-chip.sel{color:var(--acd);}
 
-.chip-list{display:flex;flex-wrap:wrap;gap:5px;}
-.chip{background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:4px 9px;font-size:11px;font-family:'DM Mono',monospace;display:flex;align-items:center;gap:5px;color:var(--mu);}
-.chip-del{background:none;border:none;color:var(--bd);cursor:pointer;font-size:12px;line-height:1;padding:0;transition:color .12s;}
+.seq-result{border-radius:10px;padding:12px 14px;font-family:var(--sans);font-size:12.5px;line-height:1.9;white-space:pre-wrap;display:none;}
+.seq-result.ok{background:#ECF3EE;border:1px solid #B9D3C0;color:var(--ok);display:block;}
+.seq-result.warn{background:var(--s2);border:1px solid #E4C79A;color:var(--wn);display:block;}
+.seq-result.error{background:#F8E9E7;border:1px solid #E4B5B0;color:var(--er);display:block;}
+
+.chip-list{display:flex;flex-wrap:wrap;gap:6px;}
+.chip{background:var(--s2);border:1px solid var(--bd);border-radius:8px;padding:5px 10px;font-size:12px;font-family:var(--sans);display:flex;align-items:center;gap:6px;color:var(--mu);}
+.chip-del{background:none;border:none;color:var(--bd);cursor:pointer;font-size:13px;line-height:1;padding:0;transition:color .12s;}
 .chip-del:hover{color:var(--er);}
 
-.btn{font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.06em;padding:9px 14px;border-radius:8px;border:1.5px solid transparent;cursor:pointer;transition:all .15s;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;}
-.btn-primary{background:var(--ac);color:#fff;border-color:var(--ac);width:100%;justify-content:center;padding:12px;font-size:12px;}
+.btn{font-family:var(--sans);font-size:13px;font-weight:600;letter-spacing:0;padding:10px 16px;border-radius:999px;border:1.5px solid transparent;cursor:pointer;transition:all .15s;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;}
+.btn:active{transform:scale(.98);}
+.btn-primary{background:var(--ac);color:#fff;border-color:var(--ac);width:100%;justify-content:center;padding:13px;font-size:14px;}
 .btn-primary:hover{background:var(--acd);border-color:var(--acd);}
 .btn-primary:disabled{opacity:.45;cursor:not-allowed;}
-.btn-secondary{background:transparent;border-color:var(--ac);color:var(--ac);width:100%;justify-content:center;padding:11px;}
+.btn-secondary{background:transparent;border-color:var(--ac);color:var(--ac);width:100%;justify-content:center;padding:12px;}
 .btn-secondary:hover{background:var(--acl);}
-.btn-ghost{background:transparent;border-color:var(--bd);color:var(--mu);}
-.btn-ghost:hover{border-color:var(--ac);color:var(--ac);}
-.btn-sm{padding:6px 11px;font-size:10px;}
-.btn-row{display:flex;gap:7px;flex-wrap:wrap;}
+.btn-ghost{background:var(--s2);border-color:var(--bd);color:var(--mu);}
+.btn-ghost:hover{border-color:var(--ac);color:var(--ac);background:var(--acl);}
+.btn-sm{padding:7px 12px;font-size:11.5px;}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;}
 
-.prog-wrap{display:none;margin-top:4px;}
+.prog-wrap{display:none;margin-top:5px;}
 .prog-wrap.show{display:block;}
-.prog-bar{height:4px;background:var(--bd);border-radius:2px;overflow:hidden;}
+.prog-bar{height:5px;background:var(--s2);border-radius:3px;overflow:hidden;}
 .prog-fill{height:100%;background:var(--ac);width:0%;transition:width .3s;}
-.prog-lbl{font-family:'DM Mono',monospace;font-size:10px;color:var(--mu);margin-top:4px;text-align:right;}
+.prog-lbl{font-family:var(--sans);font-size:11.5px;color:var(--mu);margin-top:5px;text-align:right;}
 
 hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
 
-#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--tx);color:#fff;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:.04em;padding:9px 18px;border-radius:8px;border-left:4px solid var(--ac);opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:9999;white-space:pre-line;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.18);}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--tx);color:#fff;font-family:var(--sans);font-size:12.5px;letter-spacing:0;padding:10px 20px;border-radius:10px;border-left:4px solid var(--ac);opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:9999;white-space:pre-line;text-align:center;box-shadow:0 4px 16px rgba(0,0,0,.22);}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 #toast.ok{border-left-color:var(--ok);}
 #toast.err{border-left-color:var(--er);}
 
 /* 계층 목차 들여쓰기 */
-.toc-h1{padding-left:0px;font-size:12px;font-weight:600;}
-.toc-h2{padding-left:14px;font-size:11px;color:var(--mu);}
-.toc-h3{padding-left:26px;font-size:10px;color:var(--mu);opacity:.8;}
-.toc-sub-row{display:flex;align-items:center;gap:4px;padding:2px 7px 2px 0;border-radius:5px;background:transparent;border:none;margin-top:1px;}
-.toc-sub-arrow{color:var(--bd);font-size:9px;flex-shrink:0;}
+.toc-h1{padding-left:0px;font-size:13.5px;font-weight:600;}
+.toc-h2{padding-left:14px;font-size:12.5px;color:var(--mu);}
+.toc-h3{padding-left:26px;font-size:11.5px;color:var(--mu);opacity:.85;}
+.toc-sub-row{display:flex;align-items:center;gap:5px;padding:3px 7px 3px 0;border-radius:6px;background:transparent;border:none;margin-top:1px;}
+.toc-sub-arrow{color:var(--bd);font-size:10px;flex-shrink:0;}
 
 /* 표지/판권 배지 */
-.badge-cover{background:#e8f4fd;color:#1a5fa8;border:1px solid #b3d7f5;font-size:9px;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:4px;flex-shrink:0;}
-.badge-copy{background:#fdf3e8;color:#b06010;border:1px solid #f5d3a0;font-size:9px;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:4px;flex-shrink:0;}
-.badge-del{background:#fee;color:var(--er);border:1px solid #fcc;font-size:9px;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:4px;flex-shrink:0;text-decoration:line-through;}
+.badge-cover{background:var(--acl);color:var(--ac);border:1px solid var(--bd);font-size:10.5px;font-family:var(--sans);padding:2px 7px;border-radius:6px;flex-shrink:0;}
+.badge-copy{background:var(--s2);color:var(--wn);border:1px solid #E4C79A;font-size:10.5px;font-family:var(--sans);padding:2px 7px;border-radius:6px;flex-shrink:0;}
+.badge-del{background:#F8E9E7;color:var(--er);border:1px solid #E4B5B0;font-size:10.5px;font-family:var(--sans);padding:2px 7px;border-radius:6px;flex-shrink:0;text-decoration:line-through;}
 
 /* 완결 체크박스 */
-.complete-row{display:flex;align-items:center;gap:8px;padding:6px 0 2px;}
-.complete-row label{font-size:13px;font-weight:500;color:var(--tx);cursor:pointer;display:flex;align-items:center;gap:7px;user-select:none;}
+.complete-row{display:flex;align-items:center;gap:8px;padding:7px 0 2px;}
+.complete-row label{font-size:14px;font-weight:500;color:var(--tx);cursor:pointer;display:flex;align-items:center;gap:7px;user-select:none;}
 .complete-row input[type=checkbox]{width:16px;height:16px;accent-color:var(--ac);cursor:pointer;}
 
 /* 파일명 미리보기 */
-.filename-preview{background:var(--s2);border:1px solid var(--bd);border-radius:7px;padding:8px 11px;font-family:'DM Mono',monospace;font-size:11px;color:var(--ac);margin-top:6px;word-break:break-all;letter-spacing:.01em;}
-.filename-preview .fn-label{font-size:9px;color:var(--mu);letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px;}
+.filename-preview{background:var(--acl);border:1px solid var(--bd);border-radius:10px;padding:10px 13px;font-family:var(--sans);font-size:12.5px;color:var(--acd);margin-top:7px;word-break:break-all;letter-spacing:0;}
+.filename-preview .fn-label{font-size:10.5px;color:var(--mu);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;}
 </style>
 </head>
 <body>
@@ -151,7 +163,7 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
     <div style="display:flex;flex-direction:column;gap:14px;">
 
       <div class="card">
-        <div class="card-hd"><span class="snum">1</span> 파일 목록 <span id="file-count" style="margin-left:auto;font-size:10px;">0개</span></div>
+        <div class="card-hd"><span class="snum">1</span> 파일 목록 <span id="file-count" style="margin-left:auto;font-size:11.5px;">0개</span></div>
         <label class="drop-zone" id="drop-area" style="margin-bottom:10px;">
           <p>📂 TXT · HTML · <strong>ZIP · EPUB</strong><br>드래그하거나 <strong>클릭해서 선택</strong></p>
           <input type="file" id="file-input" multiple accept=".txt,.html,.htm,.xhtml,.zip,.epub"/>
@@ -172,17 +184,24 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
 
       <div class="card">
         <div class="card-hd"><span class="snum">2</span> 목차 미리보기</div>
+        <div id="volume-ctrl" style="display:none;align-items:center;gap:8px;margin:-4px 0 10px;padding:8px 10px;background:var(--s2);border:1px solid var(--bd);border-radius:8px;">
+          <span id="volume-ctrl-count" style="font-size:11px;color:var(--ac);flex:1;"></span>
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--tx);cursor:pointer;" title="켜면 여러 회차로 분리되는 파일들의 원본 파일명이 상위(권) 목차로 묶이고, 회차들이 그 하위 목차가 됩니다. 끄면(기본값) 회차들이 각각 독립된 목차 항목이 됩니다.">
+            <input type="checkbox" id="chk-volume-mode" onchange="S.volumeMode=this.checked;renderToc();" style="width:15px;height:15px;accent-color:var(--ac);cursor:pointer;"/>
+            📚 단행본으로 묶기
+          </label>
+        </div>
         <div id="toc-preview" style="display:flex;flex-direction:column;gap:3px;max-height:300px;overflow-y:auto;"></div>
         <div style="margin-top:9px;display:flex;flex-wrap:wrap;gap:6px;">
           <button class="btn btn-secondary" onclick="checkSequence()" style="padding:8px;flex:1;">회차 검사</button>
-          <button class="btn btn-ghost btn-sm" onclick="openCoverCleanPanel()" style="flex:1;padding:8px;font-size:10px;" title="표지·판권으로 감지된 항목을 검토 후 선택 삭제">🧹 표지·판권 정리</button>
+          <button class="btn btn-ghost btn-sm" onclick="openCoverCleanPanel()" style="flex:1;padding:8px;font-size:11.5px;" title="표지·판권으로 감지된 항목을 검토 후 선택 삭제">🧹 표지·판권 정리</button>
         </div>
         <div class="seq-result" id="seq-result" style="margin-top:8px;"></div>
         <div style="margin-top:9px;padding-top:9px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:6px;">
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx);cursor:pointer;">
             <input type="checkbox" id="chk-auto-heading"/> 회차 코드 없는 파일에 헤딩 자동 삽입 (번호는 파일명에서 추출)
           </label>
-          <button class="btn btn-ghost btn-sm" onclick="autoInsertMissingHeadings()" style="padding:7px;font-size:10px;">🩹 헤딩 보정 실행</button>
+          <button class="btn btn-ghost btn-sm" onclick="autoInsertMissingHeadings()" style="padding:7px;font-size:11.5px;">🩹 헤딩 보정 실행</button>
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx);cursor:pointer;margin-top:2px;">
             <input type="checkbox" id="chk-title-own-page" onchange="renderToc()"/> 회차 제목을 본문과 별도 페이지로 (파일은 그대로, CSS로 페이지만 나눔)
           </label>
@@ -241,9 +260,9 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
             <input type="number" id="imgmgr-maxwidth" value="1600" min="200" step="100" style="flex:1;padding:6px 8px;border:1.5px solid var(--bd);border-radius:7px;font-size:12px;background:var(--surf);color:var(--tx);" oninput="scheduleImgMgrPreview()"/>
           </div>
           <div id="imgmgr-preview" style="font-size:11px;color:var(--mu);font-family:'DM Mono',monospace;"></div>
-          <div id="img-mgr-total" style="font-size:10px;color:var(--mu);font-family:'DM Mono',monospace;"></div>
+          <div id="img-mgr-total" style="font-size:11.5px;color:var(--mu);font-family:'DM Mono',monospace;"></div>
           <button class="btn btn-secondary" style="width:100%;padding:8px;font-size:12px;" onclick="applyImgMgrCompression()">📦 전체 압축 적용</button>
-          <div style="font-size:10px;color:var(--mu);line-height:1.6;">움직이는 GIF는 압축 대상에서 자동 제외되고 원본 그대로 유지됩니다. 투명 배경(PNG)은 압축 후에도 유지됩니다.</div>
+          <div style="font-size:11.5px;color:var(--mu);line-height:1.6;">움직이는 GIF는 압축 대상에서 자동 제외되고 원본 그대로 유지됩니다. 투명 배경(PNG)은 압축 후에도 유지됩니다.</div>
         </div>
       </div>
 
@@ -262,16 +281,16 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
               <label>회차/권수</label>
               <div style="display:flex;gap:5px;">
                 <input type="text" id="episode" placeholder="예) 1-110화" style="flex:1;min-width:0;" oninput="this.dataset.userEdited='1';updateFilenamePreview()"/>
-                <button type="button" class="btn btn-ghost btn-sm" style="padding:0 8px;font-size:10px;white-space:nowrap;flex-shrink:0;" onclick="autoDetectEpisode()">🔍 자동</button>
+                <button type="button" class="btn btn-ghost btn-sm" style="padding:0 8px;font-size:11.5px;white-space:nowrap;flex-shrink:0;" onclick="autoDetectEpisode()">🔍 자동</button>
               </div>
-              <div id="episode-auto-hint" style="font-size:9px;color:var(--mu);font-family:'DM Mono',monospace;margin-top:3px;"></div>
+              <div id="episode-auto-hint" style="font-size:10.5px;color:var(--mu);font-family:'DM Mono',monospace;margin-top:3px;"></div>
             </div>
             <div style="display:flex;flex-direction:column;gap:5px;">
               <div style="font-size:11px;font-family:'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--mu);">완결</div>
               <div class="complete-row">
                 <label><input type="checkbox" id="chk-complete" onchange="this.dataset.userSet='1';updateFilenamePreview()"/> 완결작</label>
               </div>
-              <div id="complete-evidence" style="font-size:10px;color:var(--mu);font-family:'DM Mono',monospace;"></div>
+              <div id="complete-evidence" style="font-size:11.5px;color:var(--mu);font-family:'DM Mono',monospace;"></div>
             </div>
           </div>
           <div class="filename-preview" id="filename-preview">
@@ -307,7 +326,7 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
               🖼 삽입할 이미지 선택
               <input type="file" id="cover-insert-img-input" accept="image/*"/>
             </label>
-            <div id="cover-insert-img-preview" style="font-size:10px;color:var(--mu);font-family:'DM Mono',monospace;"></div>
+            <div id="cover-insert-img-preview" style="font-size:11.5px;color:var(--mu);font-family:'DM Mono',monospace;"></div>
             <select id="cover-insert-target" style="width:100%;padding:7px 9px;border:1.5px solid var(--bd);border-radius:7px;font-size:12px;background:var(--surf);color:var(--tx);"></select>
             <button class="btn btn-secondary" style="width:100%;padding:7px;font-size:12px;" onclick="addCoverInsert()">이 회차 앞에 삽입 예약</button>
           </div>
@@ -326,10 +345,10 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
           <input type="checkbox" id="chk-extract-css" checked style="width:15px;height:15px;margin-top:2px;flex-shrink:0;accent-color:var(--ac);cursor:pointer;"/>
           <div>
             <div style="font-size:12px;font-weight:600;color:var(--tx);cursor:pointer;" onclick="document.getElementById('chk-extract-css').click()">파일 내 스타일 자동 추출 (업로드한 CSS와 합쳐짐, 겹치면 업로드 CSS 우선)</div>
-            <div style="font-size:10px;color:var(--mu);margin-top:2px;">HTML 파일의 &lt;style&gt; 코드(폰트 지정 등 포함)를 모아 중복 제거 후 적용. 업로드한 CSS 파일과 함께 합쳐짐.</div>
+            <div style="font-size:11.5px;color:var(--mu);margin-top:2px;">HTML 파일의 &lt;style&gt; 코드(폰트 지정 등 포함)를 모아 중복 제거 후 적용. 업로드한 CSS 파일과 함께 합쳐짐.</div>
           </div>
         </div>
-        <div id="extracted-css-preview" style="display:none;margin-top:8px;padding:8px 10px;background:#f0f8ff;border:1px solid #b3d7f5;border-radius:7px;font-family:'DM Mono',monospace;font-size:10px;color:#1a5fa8;white-space:pre-wrap;max-height:100px;overflow-y:auto;"></div>
+        <div id="extracted-css-preview" style="display:none;margin-top:8px;padding:8px 10px;background:var(--acl);border:1px solid var(--bd);border-radius:7px;font-size:11px;color:var(--acd);white-space:pre-wrap;max-height:100px;overflow-y:auto;"></div>
       </div>
 
       <div class="card">
@@ -345,7 +364,7 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
             <div class="tog-info"><div class="tl">단락 들여쓰기</div><div class="td">문단 첫 줄에 들여쓰기 적용</div></div>
             <div style="display:flex;align-items:center;gap:6px;">
               <input type="text" id="indent-size" value="1" style="width:42px;padding:5px 6px;border:1.5px solid var(--bd);border-radius:6px;font-size:11px;font-family:'DM Mono',monospace;background:var(--surf);color:var(--tx);outline:none;text-align:center;"/>
-              <span style="font-size:10px;color:var(--mu);font-family:'DM Mono',monospace;">em</span>
+              <span style="font-size:11.5px;color:var(--mu);font-family:'DM Mono',monospace;">em</span>
               <label class="tog"><input type="checkbox" id="chk-indent"/><span class="tog-sl"></span></label>
             </div>
           </div>
@@ -370,8 +389,12 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
 
           <div class="sek">
             <div class="sek-title">장면전환 *** 처리</div>
+            <div class="sek-row" style="margin-bottom:10px;">
+              <label>치환 기호 선택</label>
+              <div class="icon-palette" id="scene-palette"></div>
+            </div>
             <div class="sek-grid">
-              <div class="sek-row"><label>치환 텍스트 (비우면 원본 유지)</label><input type="text" id="sc-text" value="✦ ✦ ✦"/></div>
+              <div class="sek-row"><label>직접 입력</label><input type="text" id="sc-text" value="✦ ✦ ✦" oninput="renderScenePalette()"/></div>
               <div class="sek-row"><label>크기 (em)</label><input type="text" id="sc-size" value="1.1"/></div>
             </div>
             <div class="tog-row" style="padding:6px 0 2px;">
@@ -406,7 +429,7 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
                 <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--tx);cursor:pointer;">
                   <input type="checkbox" id="chk-h-orig-color" style="width:auto;"/> 원본 색 사용 (체크 시 위 색상 대신 원본 문서에서 감지한 H 태그 색을 적용)
                 </label>
-                <div id="h-orig-color-hint" style="font-size:10px;color:var(--mu);font-family:'DM Mono',monospace;margin-top:3px;"></div>
+                <div id="h-orig-color-hint" style="font-size:11.5px;color:var(--mu);font-family:'DM Mono',monospace;margin-top:3px;"></div>
               </div>
               <div class="sek-row"><label>아래 마진 (em)</label><input type="text" id="h-mb" value="6" style="width:100%;padding:5px 6px;border:1.5px solid var(--bd);border-radius:6px;font-size:11px;font-family:'DM Mono',monospace;background:var(--surf);color:var(--tx);outline:none;"/></div>
               <div class="sek-row"><label>정렬</label>
@@ -470,7 +493,7 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
               <label style="font-size:11px;color:var(--mu);display:block;margin-bottom:3px;">높이 (px)</label>
               <input type="number" id="imgsize-h" min="1" style="width:100%;padding:7px 9px;border:1.5px solid var(--bd);border-radius:7px;font-size:13px;background:var(--surf);color:var(--tx);"/>
             </div>
-            <div style="font-size:10px;color:var(--mu);line-height:1.5;">이 이미지가 쓰인 모든 위치(<span id="imgsize-count">0</span>곳)에 동일하게 적용됩니다.</div>
+            <div style="font-size:11.5px;color:var(--mu);line-height:1.5;">이 이미지가 쓰인 모든 위치(<span id="imgsize-count">0</span>곳)에 동일하게 적용됩니다.</div>
             <div style="display:flex;gap:6px;margin-top:6px;">
               <button class="btn btn-ghost" style="flex:1;padding:8px;font-size:12px;" onclick="closeImgSizeModal()">취소</button>
               <button class="btn btn-secondary" style="flex:1;padding:8px;font-size:12px;" onclick="applyImgSizeModal()">적용</button>
@@ -492,7 +515,7 @@ var S={
   coverData:null,
   imgMap:{},
   tocOverrides:{},
-  volumeFlags:{}, // 파일이 여러 회차로 분리될 때, 이 파일을 "단행본"(상위 권 목차)으로 묶을지 여부. 체크된 파일 인덱스만 true로 기록.
+  volumeMode:false, // 켜면, 여러 회차로 분리되는 파일들의 원본 파일명을 상위(권) 목차로 묶는 계층 목차를 적용. 끄면(기본) 회차들이 각각 독립된 목차 항목.
   coverInserts:[]
 };
 
@@ -804,6 +827,39 @@ function toggleScColor(chk){
   document.getElementById('sc-hex').disabled=!chk.checked;
 }
 
+// 장면전환 치환 기호 팔레트 (치환안함 + 깔끔한 기호 몇 가지 중 선택, 직접 입력도 가능)
+function sceneIconChoices(){
+  return [
+    {label:'치환안함',val:''},
+    {label:'✦ ✦ ✦',val:'✦ ✦ ✦'},
+    {label:'◆ ◆ ◆',val:'◆ ◆ ◆'},
+    {label:'❖ ❖ ❖',val:'❖ ❖ ❖'},
+    {label:'❧ ❧ ❧',val:'❧ ❧ ❧'},
+    {label:'◇ ◇ ◇',val:'◇ ◇ ◇'},
+    {label:'· · ·',val:'· · ·'},
+    {label:'─────',val:'─────'}
+  ];
+}
+function renderScenePalette(){
+  var wrap=document.getElementById('scene-palette');
+  var input=document.getElementById('sc-text');
+  if(!wrap||!input)return;
+  var cur=input.value;
+  wrap.innerHTML='';
+  sceneIconChoices().forEach(function(opt){
+    var chip=document.createElement('div');
+    chip.className='icon-chip'+(opt.val===''?' none-chip':'')+(opt.val===cur?' sel':'');
+    chip.textContent=opt.label;
+    chip.title=opt.val===''?'*** 줄을 원본 그대로 유지':'감지된 *** 줄을 이 기호로 통일';
+    chip.onclick=function(){
+      input.value=opt.val;
+      renderScenePalette();
+    };
+    wrap.appendChild(chip);
+  });
+}
+renderScenePalette();
+
 var addFilesLock=false;
 async function addFiles(fl){
   if(addFilesLock)return; // 중복 호출 방지 (예: 이벤트 버블링 등으로 동시에 두 번 호출되는 경우)
@@ -967,22 +1023,19 @@ function dD(e){
   }
   S.imgMap=reorderMap(S.imgMap,dragSrc,to);
   S.tocOverrides=reorderMap(S.tocOverrides,dragSrc,to);
-  S.volumeFlags=reorderMap(S.volumeFlags,dragSrc,to);
   renderList();renderToc();renderImgPanel();
 }
 function dE(){document.querySelectorAll('.file-item').forEach(function(el){el.classList.remove('dragging','drag-target');});dragSrc=null;}
 
 function removeFile(i){
-  var newToc={},newVol={};
+  var newToc={};
   reindexImgMapAfterDelete(i);
   Object.keys(S.tocOverrides).forEach(function(k){var ki=parseInt(k);if(ki<i)newToc[ki]=S.tocOverrides[ki];else if(ki>i)newToc[ki-1]=S.tocOverrides[ki];});
   S.tocOverrides=newToc;
-  Object.keys(S.volumeFlags).forEach(function(k){var ki=parseInt(k);if(ki<i)newVol[ki]=S.volumeFlags[ki];else if(ki>i)newVol[ki-1]=S.volumeFlags[ki];});
-  S.volumeFlags=newVol;
   S.files.splice(i,1);renderList();renderToc();renderImgPanel();if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();
 }
 function clearAll(){
-  S.files=[];S.imgMap={};S.tocOverrides={};S.volumeFlags={};
+  S.files=[];S.imgMap={};S.tocOverrides={};
   renderList();renderToc();renderImgPanel();
   var t=document.getElementById('title'),a=document.getElementById('author'),c=document.getElementById('chk-complete');
   if(t)delete t.dataset.userEdited;if(a)delete a.dataset.userEdited;if(c)delete c.dataset.userSet;
@@ -1008,6 +1061,7 @@ function detectPageType(html){
 
 function renderToc(){
   var wrap=document.getElementById('toc-preview');wrap.innerHTML='';
+  updateVolumeCtrl(0);
   if(!S.files.length){
     wrap.innerHTML='<div style="padding:14px;text-align:center;color:var(--mu);font-size:11px;font-family:\'DM Mono\',monospace;">파일을 추가하면 표시됩니다</div>';
     return;
@@ -1022,6 +1076,7 @@ function renderToc(){
   var missing=mcInfo.missing;
   var dupSet={};Object.keys(numMap).forEach(function(n){if(numMap[n].length>1)dupSet[n]=true;});
   var allDedupLog=[]; // 파일 내부(회차 분리) 중복 제거 기록 — 하단에 요약 표시
+  var splitFileCount=0; // 여러 회차로 자동 분리되는 파일 개수 — 섹션 헤더의 단일 "단행본" 컨트롤에 집계 표시
 
   // 표지/판권 감지 (미리 체크해서 배지 표시용)
   var firstCoverFound=false;
@@ -1084,28 +1139,9 @@ function renderToc(){
       row.appendChild(badge2);
     }
 
-    // 분리될 파일 개수 배지 + 단행본(계층 목차) 체크박스
+    // 분리될 파일 개수 집계 (표시는 섹션 헤더의 단일 컨트롤에서 한 번에)
     if(isHtmlFile&&segs.length>=2&&pageType===null){
-      var hbadge=document.createElement('span');
-      hbadge.style.cssText='font-size:10px;color:var(--ac);font-family:\'DM Mono\',monospace;flex-shrink:0;background:var(--acl);padding:1px 5px;border-radius:4px;';
-      hbadge.textContent=segs.length+'개 파일로 분리';
-      row.appendChild(hbadge);
-
-      var volLabel=document.createElement('label');
-      volLabel.style.cssText='display:flex;align-items:center;gap:3px;flex-shrink:0;font-size:10px;color:var(--mu);cursor:pointer;font-family:\'DM Mono\',monospace;';
-      volLabel.title='체크하면 이 파일 안의 회차들이 이 파일명을 상위(권) 목차로 묶는 계층 목차가 됩니다. 체크 해제 시(기본값) 회차들이 각각 독립된 목차 항목이 됩니다.';
-      var volChk=document.createElement('input');
-      volChk.type='checkbox';volChk.checked=!!S.volumeFlags[i];
-      volChk.style.cssText='width:13px;height:13px;cursor:pointer;accent-color:var(--ac);';
-      (function(idx){
-        volChk.addEventListener('change',function(){
-          if(this.checked)S.volumeFlags[idx]=true;else delete S.volumeFlags[idx];
-          renderToc();
-        });
-      })(i);
-      volLabel.appendChild(volChk);
-      volLabel.appendChild(document.createTextNode('단행본'));
-      row.appendChild(volLabel);
+      splitFileCount++;
     }
 
     var del=document.createElement('button');
@@ -1114,12 +1150,10 @@ function renderToc(){
     del.textContent='✕';del.title='이 챕터를 파일 목록에서 삭제';
     (function(idx){
       del.addEventListener('click',function(){
-        var newToc={},newVol={};
+        var newToc={};
         reindexImgMapAfterDelete(idx);
         Object.keys(S.tocOverrides).forEach(function(k){var ki=parseInt(k);if(ki<idx)newToc[ki]=S.tocOverrides[ki];else if(ki>idx)newToc[ki-1]=S.tocOverrides[ki];});
         S.tocOverrides=newToc;
-        Object.keys(S.volumeFlags).forEach(function(k){var ki=parseInt(k);if(ki<idx)newVol[ki]=S.volumeFlags[ki];else if(ki>idx)newVol[ki-1]=S.volumeFlags[ki];});
-        S.volumeFlags=newVol;
         S.files.splice(idx,1);renderList();renderToc();renderImgPanel();if(typeof renderImgMgrPanel==='function')renderImgMgrPanel();applyAutoCompletion();applyAutoEpisode();refreshDetectedHColor();toast('챕터 삭제됨','ok');
       });
     })(i);
@@ -1129,7 +1163,7 @@ function renderToc(){
     // 이 파일이 여러 회차로 분리되는 경우, 실제 회차 목록을 펼쳐 보여줌.
     // "단행본" 체크 여부에 따라 계층(└ 들여쓰기, 상위 목차로 묶임) / 평면(독립된 목차 항목) 표시가 달라진다.
     if(isHtmlFile&&pageType===null&&segs.length>=2){
-      var isVolume=!!S.volumeFlags[i];
+      var isVolume=S.volumeMode;
       var dedupNums={};fileDedupLog.forEach(function(e){dedupNums[e.num]=e;});
       segs.forEach(function(seg){
         var subRow=document.createElement('div');
@@ -1146,7 +1180,7 @@ function renderToc(){
         var dEntry=dedupNums[extractNum(seg.title)];
         if(dEntry){
           var dbadge=document.createElement('span');
-          dbadge.style.cssText='font-size:9px;color:var(--wn);background:#fff8e6;border:1px solid #f0d78c;padding:0 5px;border-radius:4px;flex-shrink:0;';
+          dbadge.style.cssText='font-size:10.5px;color:var(--wn);background:var(--s2);border:1px solid #E4C79A;padding:1px 6px;border-radius:5px;flex-shrink:0;';
           dbadge.textContent='중복 '+dEntry.count+'→1';
           dbadge.title='원본에 이 회차가 '+dEntry.count+'번 반복 저장되어 있었음. 그중 가장 긴 버전('+dEntry.keptLen+'자)만 남김. 발견된 길이: '+dEntry.allLens.join(', ')+'자 — 길이 차이가 크면 내용이 잘렸을 수 있으니 원본을 다시 확인해보세요.';
           subRow.appendChild(dbadge);
@@ -1158,13 +1192,13 @@ function renderToc(){
 
   if(missing.length){
     var mi=document.createElement('div');
-    mi.style.cssText='padding:5px 10px;font-family:\'DM Mono\',monospace;font-size:10px;color:var(--er);background:#fff5f5;border:1px solid #fcc;border-radius:6px;margin-top:2px;';
+    mi.style.cssText='padding:6px 11px;font-size:11.5px;color:var(--er);background:#F8E9E7;border:1px solid #E4B5B0;border-radius:8px;margin-top:2px;';
     mi.textContent='⚠ 누락: '+missing.join(', ')+(mcInfo.unit||'화');
     wrap.appendChild(mi);
   }
   if(allDedupLog.length){
     var di=document.createElement('div');
-    di.style.cssText='padding:6px 10px;font-family:\'DM Mono\',monospace;font-size:10px;color:#8a6d00;background:#fff8e6;border:1px solid #f0d78c;border-radius:6px;margin-top:2px;line-height:1.6;';
+    di.style.cssText='padding:7px 11px;font-size:11.5px;color:var(--wn);background:var(--s2);border:1px solid #E4C79A;border-radius:8px;margin-top:2px;line-height:1.65;';
     var totalCh=allDedupLog.reduce(function(s,f){return s+f.entries.length;},0);
     var parts=['⚠ 중복 회차 '+totalCh+'건 자동 정리됨 (가장 긴 버전만 유지):'];
     allDedupLog.forEach(function(fe){
@@ -1176,6 +1210,19 @@ function renderToc(){
     wrap.appendChild(di);
   }
   if(document.getElementById('chk-cover-insert-enable').checked)populateCoverInsertSelect();
+  updateVolumeCtrl(splitFileCount);
+}
+
+// 섹션② 헤더의 단일 "단행본" 컨트롤 갱신 — 파일마다 반복 표시하던 걸 한 곳으로 통합.
+// count>0(=여러 회차로 자동 분리되는 파일이 있음)일 때만 컨트롤을 보여준다.
+function updateVolumeCtrl(count){
+  var ctrl=document.getElementById('volume-ctrl');
+  if(!ctrl)return;
+  if(!count){ctrl.style.display='none';return;}
+  ctrl.style.display='flex';
+  document.getElementById('volume-ctrl-count').textContent=count+'개 파일 자동 분리됨';
+  var chk=document.getElementById('chk-volume-mode');
+  if(chk.checked!==S.volumeMode)chk.checked=S.volumeMode;
 }
 
 function checkSequence(){
@@ -1761,12 +1808,10 @@ function deleteCheckedCoverCleanItems(){
   // 파일 전체 삭제 (표지/판권 파일) — 뒤에서부터
   wholeFileDel=Array.from(new Set(wholeFileDel)).sort(function(a,b){return b-a;});
   wholeFileDel.forEach(function(idx){
-    var newToc={},newVol={};
+    var newToc={};
     reindexImgMapAfterDelete(idx);
     Object.keys(S.tocOverrides).forEach(function(k){var ki=parseInt(k);if(ki<idx)newToc[ki]=S.tocOverrides[ki];else if(ki>idx)newToc[ki-1]=S.tocOverrides[ki];});
     S.tocOverrides=newToc;
-    Object.keys(S.volumeFlags).forEach(function(k){var ki=parseInt(k);if(ki<idx)newVol[ki]=S.volumeFlags[ki];else if(ki>idx)newVol[ki-1]=S.volumeFlags[ki];});
-    S.volumeFlags=newVol;
     S.files.splice(idx,1);
   });
   document.getElementById('cover-clean-select-all').checked=false;
@@ -2660,7 +2705,7 @@ function makeChapters(files,opts){
     }
 
     // 세그먼트 2개 이상 — 실제로 파일 분리. "단행본" 체크된 파일만 원본 파일명을 상위(권) 목차로 묶는다.
-    var useVolume=!!S.volumeFlags[i];
+    var useVolume=S.volumeMode;
     segments.forEach(function(seg,j){
       result.push({
         id:'ch_'+safeId+'_'+i+'_'+j,
