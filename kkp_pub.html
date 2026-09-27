@@ -1081,6 +1081,7 @@ function renderToc(){
   var dupSet={};Object.keys(numMap).forEach(function(n){if(numMap[n].length>1)dupSet[n]=true;});
   var allDedupLog=[]; // 파일 내부(회차 분리) 중복 제거 기록 — 하단에 요약 표시
   var splitFileCount=0; // 여러 회차로 자동 분리되는 파일 개수 — 섹션 헤더의 단일 "단행본" 컨트롤에 집계 표시
+  var splitChapterTotal=0; // 그 파일들이 실제로 분리되어 나올 회차 총 개수
 
   // 표지/판권 감지 (미리 체크해서 배지 표시용)
   var firstCoverFound=false;
@@ -1143,9 +1144,10 @@ function renderToc(){
       row.appendChild(badge2);
     }
 
-    // 분리될 파일 개수 집계 (표시는 섹션 헤더의 단일 컨트롤에서 한 번에)
+    // 분리될 파일 개수 + 실제로 분리되어 나올 회차 개수 집계 (표시는 섹션 헤더의 단일 컨트롤에서 한 번에)
     if(isHtmlFile&&segs.length>=2&&pageType===null){
       splitFileCount++;
+      splitChapterTotal+=segs.length;
     }
 
     var del=document.createElement('button');
@@ -1214,52 +1216,70 @@ function renderToc(){
     wrap.appendChild(di);
   }
   if(document.getElementById('chk-cover-insert-enable').checked)populateCoverInsertSelect();
-  updateVolumeCtrl(splitFileCount);
+  updateVolumeCtrl(splitFileCount,splitChapterTotal);
 }
 
 // 섹션② 헤더의 단일 "단행본" 컨트롤 갱신 — 파일마다 반복 표시하던 걸 한 곳으로 통합.
 // count>0(=여러 회차로 자동 분리되는 파일이 있음)일 때만 컨트롤을 보여준다.
-function updateVolumeCtrl(count){
+// "N개 파일 자동 분리됨"만 쓰면 "무슨 뜻이지, 진짜로 회차별로 나뉘는 거 맞나?" 헷갈릴 수 있어
+// 실제로 나올 회차 총 개수(chapterTotal)까지 같이 보여준다.
+function updateVolumeCtrl(count,chapterTotal){
   var ctrl=document.getElementById('volume-ctrl');
   if(!ctrl)return;
   if(!count){ctrl.style.display='none';return;}
   ctrl.style.display='flex';
-  document.getElementById('volume-ctrl-count').textContent=count+'개 파일 자동 분리됨';
+  document.getElementById('volume-ctrl-count').textContent=count+'개 파일 → 총 '+chapterTotal+'개 회차로 자동 분리됨';
   var chk=document.getElementById('chk-volume-mode');
   if(chk.checked!==S.volumeMode)chk.checked=S.volumeMode;
 }
 
+// "회차 검사"는 업로드된 파일 개수가 아니라 makeChapters()가 실제로 분리해낼 회차(챕터) 기준으로 검사해야 한다.
+// 예전에는 S.files(업로드 파일 12개: 병합 파일 4개 + 외전 파일 8개)를 그대로 훑어서 파일당 숫자 하나만 뽑았기 때문에,
+// "182-235.html"이라는 파일명 자체에서 "182"만, "외전 1화"에서 "1"만 뽑혀 "1화~366화"처럼 실제와 동떨어진 결과가 나왔다.
+// 이제는 실제 분리 결과(예: 182화~415화 총 234개, 외전 1화~8화)를 기준으로, 본편/에필로그/외전을 구분해서 각각 검사한다.
 function checkSequence(){
   var el=document.getElementById('seq-result');
   if(!S.files.length){el.textContent='파일이 없습니다';el.className='seq-result error';return;}
-  // 파일 하나당 회차 번호 하나만 추출 (파일명 우선, 없으면 h태그)
-  // 같은 파일에서 파일명+h태그 둘 다 추출하면 중복 오탐 발생
-  var nums=[];
-  S.files.forEach(function(f){
-    var stem=f.name.replace(/\.\w+$/,'');
-    var fn=extractNum(stem);
-    if(fn!==null){nums.push({n:fn,lbl:f.name,txt:stem});return;}
-    // 파일명에 숫자 없으면 h태그에서 추출
-    if(f.text&&f.text.trim().startsWith('<')){
-      var tmp=document.createElement('div');tmp.innerHTML=f.text;
-      var h=tmp.querySelector('h1,h2,h3');
-      if(h){var hn=extractNum(h.textContent);if(hn!==null){nums.push({n:hn,lbl:f.name,txt:h.textContent});return;}}
-    }
+  var opts=gatherChapterOpts();
+  var chapters;
+  try{chapters=makeChapters(S.files,opts);}catch(e){console.error(e);el.textContent='회차 분석 중 오류가 발생했습니다';el.className='seq-result error';return;}
+  if(!chapters||!chapters.length){el.textContent='회차를 찾을 수 없습니다';el.className='seq-result error';return;}
+
+  var skipRe=/^(표지|cover|커버|판권|copyright|©|ⓒ)/i;
+  function segCategory(label){
+    var t=String(label||'');
+    if(/에필로그|에필/.test(t))return'epilogue';
+    if(/외전|번외/.test(t))return'side';
+    return'main';
+  }
+  var catLabel={main:'본편',epilogue:'에필로그',side:'외전·번외'};
+  var groups={main:[],epilogue:[],side:[]};
+  chapters.forEach(function(c){
+    var t=String(c.title||'').normalize('NFC').trim();
+    if(!t||skipRe.test(t))return;
+    groups[segCategory(t)].push(t);
   });
-  if(!nums.length){el.textContent='숫자 회차를 찾을 수 없습니다';el.className='seq-result error';return;}
-  var map={};
-  nums.forEach(function(x){if(!map[x.n])map[x.n]=[];map[x.n].push(x.lbl);});
-  var keys=Object.keys(map).map(Number).sort(function(a,b){return a-b;});
-  var dups=keys.filter(function(n){return map[n].length>1;});
-  // 단위(권/화/회 등) 인식 — 권/화가 섞여 있을 때 다수 단위 기준으로 누락 재계산
-  var mc=detectMissingChapters(nums.map(function(x){return x.txt;}));
-  var missing=mc.unit?mc.missing:(function(){var m=[];for(var i=keys[0];i<=keys[keys.length-1];i++){if(!map[i])m.push(i);}return m;})();
-  var unitLbl=mc.unit||'화';
-  var lines=[];
-  if(missing.length)lines.push('누락('+unitLbl+' 기준): '+missing.join(', '));
-  if(dups.length){lines.push('중복:');dups.forEach(function(n){lines.push('  '+n+'화 → '+map[n].join(' / '));});}
-  if(!lines.length){el.textContent='이상 없음 👍  ('+keys[0]+'화 ~ '+keys[keys.length-1]+'화, 총 '+keys.length+'개)';el.className='seq-result ok';}
-  else{el.textContent=lines.join('\n');el.className='seq-result warn';}
+
+  var summaryParts=[],issueLines=[],hasIssue=false,anyNums=false;
+  ['main','epilogue','side'].forEach(function(cat){
+    var labels=groups[cat];
+    if(!labels.length)return;
+    var nums=labels.map(function(t){return extractNum(t);}).filter(function(n){return n!==null;});
+    if(!nums.length)return;
+    anyNums=true;
+    var map={};
+    nums.forEach(function(n){map[n]=(map[n]||0)+1;});
+    var keys=Object.keys(map).map(Number).sort(function(a,b){return a-b;});
+    var dups=keys.filter(function(n){return map[n]>1;});
+    var missing=[];
+    for(var i=keys[0];i<=keys[keys.length-1];i++){if(!map[i])missing.push(i);}
+    summaryParts.push(catLabel[cat]+' '+keys[0]+'~'+keys[keys.length-1]+'화(총 '+nums.length+'개)');
+    if(missing.length){hasIssue=true;issueLines.push(catLabel[cat]+' 누락: '+missing.join(', ')+'화');}
+    if(dups.length){hasIssue=true;dups.forEach(function(n){issueLines.push(catLabel[cat]+' 중복: '+n+'화 × '+map[n]+'개 — '+labels.filter(function(t){return extractNum(t)===n;}).join(' / '));});}
+  });
+  if(!anyNums){el.textContent='숫자 회차를 찾을 수 없습니다';el.className='seq-result error';return;}
+  if(!hasIssue){el.textContent='이상 없음 👍  '+summaryParts.join(' / ');el.className='seq-result ok';}
+  else{el.textContent=summaryParts.join(' / ')+'\n'+issueLines.join('\n');el.className='seq-result warn';}
 }
 
 function renderImgPanel(){
