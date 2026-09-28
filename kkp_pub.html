@@ -2434,6 +2434,9 @@ async function packEpub(title,author,chapters,cssExtra,doPurge,coverData,saveFil
 // ══════════════════════════════════════════════════════════════
 function isWrapperDiv(el){
   if(el.tagName!=='DIV')return false;
+  // 카톡 말풍선 구조(kabox > box_l/box_r > ka_txt)는 div 자체가 스타일(CSS) 대상이다.
+  // 직접 텍스트가 없다고 껍데기로 벗겨내면 안쪽 ka_txt 문단만 남아 카톡 스타일이 통째로 사라진다.
+  if(el.classList&&(el.classList.contains('kabox')||el.classList.contains('box_l')||el.classList.contains('box_r')))return false;
   for(var i=0;i<el.childNodes.length;i++){
     var n=el.childNodes[i];
     if(n.nodeType===3&&n.textContent.trim())return false; // 직접 텍스트가 있으면 콘텐츠로 취급
