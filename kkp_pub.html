@@ -2467,7 +2467,17 @@ function flattenToUnits(root){
         var txt=(el.textContent||'').trim();
         var hasImg=el.tagName==='IMG'||!!el.querySelector('img');
         if(!txt&&!hasImg)return; // 완전히 빈 요소는 건너뜀
-        units.push({type:'content',html:el.outerHTML,hasImg:hasImg});
+        var outHtml=el.outerHTML;
+        // 회차 제목이 아닌데 h1~h6 태그를 쓴 본문(예: 인용 기사 제목 h4.txt_gl)은 다른 회차의 같은 줄(p.txt_gl)과
+        // 태그가 달라서, 이후 스타일 작업에서 일반 문단처럼 인식되지 않고 빠지는 문제가 있었다.
+        // 클래스·속성·내용은 그대로 두고 태그만 p로 통일한다.
+        if(/^H[1-6]$/.test(el.tagName)){
+          var pEl=document.createElement('p');
+          Array.from(el.attributes).forEach(function(a){pEl.setAttribute(a.name,a.value);});
+          pEl.innerHTML=el.innerHTML;
+          outHtml=pEl.outerHTML;
+        }
+        units.push({type:'content',html:outHtml,hasImg:hasImg});
       }
     });
   }
