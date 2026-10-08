@@ -2474,6 +2474,12 @@ function flattenToUnits(root){
         if(/^H[1-6]$/.test(el.tagName)){
           var pEl=document.createElement('p');
           Array.from(el.attributes).forEach(function(a){pEl.setAttribute(a.name,a.value);});
+          // 원본에서 같은 클래스(txt_gl 등)의 <p> 줄은 인라인으로 font-family: sans-serif가 붙어 고딕으로 나오는데,
+          // h4로 저장된 줄은 그 인라인 설정이 빠져 있어 본문 글꼴로 나오던 문제 — 형제 줄과 똑같이 고딕으로 맞춘다.
+          if(/(^|\s)(txt_g\w*|box_g\w*)(\s|$)/.test(pEl.getAttribute('class')||'')&&!/font-family/i.test(pEl.getAttribute('style')||'')){
+            var oldSt=(pEl.getAttribute('style')||'').trim().replace(/;$/,'');
+            pEl.setAttribute('style',(oldSt?oldSt+'; ':'')+'font-family: sans-serif !important');
+          }
           pEl.innerHTML=el.innerHTML;
           outHtml=pEl.outerHTML;
         }
