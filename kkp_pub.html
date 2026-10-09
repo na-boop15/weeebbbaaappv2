@@ -1082,6 +1082,7 @@ function renderToc(){
   var allDedupLog=[]; // 파일 내부(회차 분리) 중복 제거 기록 — 하단에 요약 표시
   var splitFileCount=0; // 여러 회차로 자동 분리되는 파일 개수 — 섹션 헤더의 단일 "단행본" 컨트롤에 집계 표시
   var splitChapterTotal=0; // 그 파일들이 실제로 분리되어 나올 회차 총 개수
+  var detectedVolumes=[]; // 단행본 모드에서 파일 안에서 감지된 권 라벨(예: 1권~5권)
 
   // 표지/판권 감지 (미리 체크해서 배지 표시용)
   var firstCoverFound=false;
@@ -1170,8 +1171,19 @@ function renderToc(){
     // "단행본" 체크 여부에 따라 계층(└ 들여쓰기, 상위 목차로 묶임) / 평면(독립된 목차 항목) 표시가 달라진다.
     if(isHtmlFile&&pageType===null&&segs.length>=2){
       var isVolume=S.volumeMode;
+      // 단행본 모드에서 파일 안에 권 구분(판권/"N권으로 계속")이 있으면 "1권, 2권…" 대목차 머리글을 미리보기에도 표시
+      var segVolLabels=isVolume?assignVolumeLabels(segs):null;
+      var prevVolLabel=null;
+      if(segVolLabels){segVolLabels.forEach(function(l){if(detectedVolumes.indexOf(l)<0)detectedVolumes.push(l);});}
       var dedupNums={};fileDedupLog.forEach(function(e){dedupNums[e.num]=e;});
-      segs.forEach(function(seg){
+      segs.forEach(function(seg,segIdx){
+        if(segVolLabels&&segVolLabels[segIdx]!==prevVolLabel){
+          prevVolLabel=segVolLabels[segIdx];
+          var volHead=document.createElement('div');
+          volHead.style.cssText='padding:6px 7px 2px;font-size:13px;font-weight:600;color:var(--ac);';
+          volHead.textContent='📚 '+prevVolLabel;
+          wrap.appendChild(volHead);
+        }
         var subRow=document.createElement('div');
         subRow.className='toc-sub-row';
         subRow.style.cssText='display:flex;align-items:center;gap:4px;padding:2px 7px 2px '+(isVolume?'20px':'7px')+';';
@@ -1216,19 +1228,21 @@ function renderToc(){
     wrap.appendChild(di);
   }
   if(document.getElementById('chk-cover-insert-enable').checked)populateCoverInsertSelect();
-  updateVolumeCtrl(splitFileCount,splitChapterTotal);
+  updateVolumeCtrl(splitFileCount,splitChapterTotal,detectedVolumes);
 }
 
 // 섹션② 헤더의 단일 "단행본" 컨트롤 갱신 — 파일마다 반복 표시하던 걸 한 곳으로 통합.
 // count>0(=여러 회차로 자동 분리되는 파일이 있음)일 때만 컨트롤을 보여준다.
 // "N개 파일 자동 분리됨"만 쓰면 "무슨 뜻이지, 진짜로 회차별로 나뉘는 거 맞나?" 헷갈릴 수 있어
 // 실제로 나올 회차 총 개수(chapterTotal)까지 같이 보여준다.
-function updateVolumeCtrl(count,chapterTotal){
+function updateVolumeCtrl(count,chapterTotal,volumes){
   var ctrl=document.getElementById('volume-ctrl');
   if(!ctrl)return;
   if(!count){ctrl.style.display='none';return;}
   ctrl.style.display='flex';
-  document.getElementById('volume-ctrl-count').textContent=count+'개 파일 → 총 '+chapterTotal+'개 회차로 자동 분리됨';
+  var txt=count+'개 파일 → 총 '+chapterTotal+'개 회차로 자동 분리됨';
+  if(volumes&&volumes.length)txt+=' · 파일 안에서 '+volumes.join('·')+' 구분 감지';
+  document.getElementById('volume-ctrl-count').textContent=txt;
   var chk=document.getElementById('chk-volume-mode');
   if(chk.checked!==S.volumeMode)chk.checked=S.volumeMode;
 }
@@ -2679,6 +2693,35 @@ function closeChapterPreview(){
   document.getElementById('preview-modal').style.display='none';
 }
 
+// 한 파일에 여러 권(예: 1~5권)이 이어 붙어 저장된 경우, 각 권 끝의 판권 페이지(p.title "… N권")나
+// "『…』 N+1권으로 계속" 줄로 권 경계를 찾아 세그먼트마다 "N권" 라벨을 붙인다.
+// 권 표시가 하나도 없으면 null을 돌려준다(→ 기존처럼 파일명이 상위 목차가 됨).
+function assignVolumeLabels(segments){
+  var ends=[],found=false;
+  segments.forEach(function(seg){
+    var t=document.createElement('div');t.innerHTML=seg.html;
+    var vol=null;
+    Array.from(t.querySelectorAll('p.title')).forEach(function(el){
+      if(vol!==null)return;
+      var m=(el.textContent||'').trim().match(/^.{0,60}?(\d+)\s*권$/);
+      if(m)vol=parseInt(m[1],10);
+    });
+    if(vol===null){
+      var m2=(t.textContent||'').match(/[』」]\s*(\d+)\s*권으로\s*계속/);
+      if(m2&&parseInt(m2[1],10)>1)vol=parseInt(m2[1],10)-1;
+    }
+    ends.push(vol);
+    if(vol!==null)found=true;
+  });
+  if(!found)return null;
+  var labels=new Array(segments.length),start=0,last=0;
+  ends.forEach(function(v,j){
+    if(v!==null){for(var k=start;k<=j;k++)labels[k]=v+'권';start=j+1;last=v;}
+  });
+  for(var k=start;k<segments.length;k++)labels[k]=(last+1)+'권'; // 마지막 판권 이후에 남은 회차는 다음 권으로 간주
+  return labels;
+}
+
 function makeChapters(files,opts){
   var titleOwnPageEl=document.getElementById('chk-title-own-page');
   var titlePageToggle=titleOwnPageEl?titleOwnPageEl.checked:false;
@@ -2749,13 +2792,15 @@ function makeChapters(files,opts){
 
     // 세그먼트 2개 이상 — 실제로 파일 분리. "단행본" 체크된 파일만 원본 파일명을 상위(권) 목차로 묶는다.
     var useVolume=S.volumeMode;
+    // 파일 안에 권 구분이 있으면(예: 1~5권이 한 파일) 파일명 대신 "1권, 2권…"을 각각 대목차로 사용
+    var volLabels=useVolume?assignVolumeLabels(segments):null;
     segments.forEach(function(seg,j){
       result.push({
         id:'ch_'+safeId+'_'+i+'_'+j,
         file:safeId+'_'+i+'_'+j+'.xhtml',
         title:seg.title||('섹션 '+(j+1)),
         content:seg.html,
-        parentLabel:useVolume?stem:null
+        parentLabel:useVolume?(volLabels?volLabels[j]:stem):null
       });
     });
   });
