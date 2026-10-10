@@ -374,9 +374,10 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
           </div>
 
           <div class="tog-row">
-            <div class="tog-info"><div class="tl">회차 제목 밑줄 제거</div><div class="td">h태그 바로 아래 hr(구분선) 삭제 — 개발자도구로 긁은 코드용</div></div>
-            <label class="tog"><input type="checkbox" id="chk-remove-hr"/><span class="tog-sl"></span></label>
+            <div class="tog-info"><div class="tl">회차 제목 밑줄 제거</div><div class="td">제목 아래 선 삭제 — hr 태그, 또는 파일 CSS로 그린 밑줄(border-bottom)</div></div>
+            <label class="tog"><input type="checkbox" id="chk-remove-hr" onchange="refreshUnderlineHint()"/><span class="tog-sl"></span></label>
           </div>
+          <div id="hr-detect-hint" style="display:none;margin:-2px 0 6px;padding:8px 11px;background:var(--s2);border:1px solid #E4C79A;border-radius:8px;font-size:12px;color:var(--wn);"></div>
 
           <div class="tog-row">
             <div class="tog-info"><div class="tl">미사용 CSS 선택자 제거</div><div class="td">HTML에 없는 클래스·태그 규칙 삭제</div></div>
@@ -1729,9 +1730,11 @@ function detectInlineCoverImgs(text){
 function detectInlineCopyrightBlocks(text){
   if(!text)return[];
   var out=[];
-  var re=/<div\s+class=["']info["'][^>]*>/gi,m;
+  // class="info"(기존) + class="copyright"(예: 단행본 저장본의 권 끝 판권 페이지) 블록을 대상으로 한다.
+  var re=/<div\s+class=["'](?:info|copyright)["'][^>]*>/gi,m;
   while((m=re.exec(text))){
     var start=m.index;
+    var isCopyrightDiv=/class=["']copyright/i.test(m[0]);
     var depth=1;
     var tagRe=/<\/?div\b[^>]*>/gi;
     tagRe.lastIndex=re.lastIndex;
@@ -1739,6 +1742,13 @@ function detectInlineCopyrightBlocks(text){
     while(depth>0&&(tm=tagRe.exec(text))){
       if(tm[0].charAt(1)==='/')depth--;else depth++;
       pos=tagRe.lastIndex;
+    }
+    if(isCopyrightDiv){
+      // 판권 div가 페이지 래퍼(div.DC2CN) 안에 혼자 들어 있으면 래퍼째 지워서 빈 페이지 div가 남지 않게 한다.
+      var before=text.slice(Math.max(0,start-200),start);
+      var wm=before.match(/<div\s+class=["']DC2CN["'][^>]*>\s*$/i);
+      var am=text.slice(pos,pos+30).match(/^\s*<\/div>/);
+      if(wm&&am){start=start-wm[0].length;pos=pos+am[0].length;}
     }
     out.push({index:start,len:pos-start,tag:text.slice(start,pos)});
     re.lastIndex=pos;
@@ -2280,8 +2290,54 @@ function detectHeadingColor(){
   return null;
 }
 // 파일이 바뀔 때마다 호출 — 감지 결과를 S.detectedHColor에 저장하고 힌트 텍스트를 갱신한다
+// 제목 아래 선 감지: (a) 제목 태그 바로 뒤 <hr>  (b) 제목에 쓰인 클래스가 파일 CSS에서 border-bottom/underline으로 선을 그리는 경우
+function detectTitleUnderlines(){
+  var res={hr:0,classes:[]},clsSet={};
+  S.files.forEach(function(f){
+    var t=f.text||'';
+    if(t.trim().charAt(0)!=='<')return;
+    var re=/<\/h[1-3]>\s*<hr\b/gi;
+    while(re.exec(t))res.hr++;
+    var styleText='';
+    t.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi,function(_,c){styleText+=c+'\n';return '';});
+    if(!styleText)return;
+    var hre=/<h[1-4]\b[^>]*\sclass\s*=\s*["']([^"']+)["']/gi,m,seen={},n=0;
+    while((m=hre.exec(t))&&n<30){
+      m[1].split(/\s+/).forEach(function(c){if(c&&!seen[c]){seen[c]=1;n++;}});
+    }
+    Object.keys(seen).forEach(function(c){
+      var esc=c.replace(/[-\/\\^$*+?.()|[\]{}]/g,'\\$&');
+      var rr=new RegExp('(?:^|[}\\s,])(?:h[1-6])?\\.'+esc+'(?![\\w-])[^{}]*\\{([^}]*)\\}','g'),mm;
+      while((mm=rr.exec(styleText))){
+        if(/border-bottom\s*:\s*(?!\s*(?:none|0\b))[^;]*\b(?:solid|dashed|dotted|double)\b|text-decoration[^;]*underline/i.test(mm[1])){clsSet[c]=true;break;}
+      }
+    });
+  });
+  res.classes=Object.keys(clsSet);
+  return res;
+}
+var lastUnderlineSig='';
+function refreshUnderlineHint(){
+  var hint=document.getElementById('hr-detect-hint');
+  if(!hint)return;
+  var d=detectTitleUnderlines();
+  if(!d.hr&&!d.classes.length){hint.style.display='none';lastUnderlineSig='';return;}
+  var on=document.getElementById('chk-remove-hr').checked;
+  var parts=[];
+  if(d.hr)parts.push('제목 바로 아래 구분선(hr) '+d.hr+'곳');
+  if(d.classes.length)parts.push('제목 스타일 밑줄(.'+d.classes.join(', .')+')');
+  hint.textContent=(on?'✅ 제거됨 — ':'⚠ 제목 아래 선 감지: ')+parts.join(' · ')+(on?'':' — 위 토글을 켜면 지워져요');
+  hint.style.display='block';
+  var sig=parts.join('|');
+  if(!on&&sig!==lastUnderlineSig){
+    lastUnderlineSig=sig;
+    setTimeout(function(){toast('제목 아래 선이 감지됐어요\n"회차 제목 밑줄 제거"로 지울 수 있어요','ok');},1600);
+  }
+}
+
 function refreshDetectedHColor(){
   S.detectedHColor=detectHeadingColor();
+  refreshUnderlineHint();
   var hint=document.getElementById('h-orig-color-hint');
   if(!hint)return;
   hint.textContent=S.detectedHColor?('원본에서 감지: '+S.detectedHColor):'원본 색상을 감지하지 못했어요(체크해도 아래 색상이 적용됩니다)';
@@ -2863,6 +2919,11 @@ async function buildEpub(){
     // 추출 CSS + 업로드 CSS 병합, 중복 선택자는 업로드 CSS(나중 순서)가 우선
     var userCss=mergeCssWithDedup(cssBlocks);
     if(opts.scene)userCss+='\n'+buildCustomCss();
+    if(opts.removeHr){
+      // 제목 스타일이 border-bottom 등으로 그리는 밑줄도 함께 제거
+      var ul=detectTitleUnderlines();
+      if(ul.classes.length)userCss+='\n'+ul.classes.map(function(c){return '.'+c;}).join(',')+'{border-bottom:none !important;text-decoration:none !important;}';
+    }
     if(doIndent){
       var indentSize=v('indent-size')||'1';
       userCss+='\np:not(.scene-break){text-indent:'+indentSize+'em !important;}';
