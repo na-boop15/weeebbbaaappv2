@@ -1185,6 +1185,7 @@ function renderToc(){
   var allDedupLog=[]; // 파일 내부(회차 분리) 중복 제거 기록 — 하단에 요약 표시
   var splitFileCount=0; // 여러 회차로 자동 분리되는 파일 개수 — 섹션 헤더의 단일 "단행본" 컨트롤에 집계 표시
   var splitChapterTotal=0; // 그 파일들이 실제로 분리되어 나올 회차 총 개수
+  var volCarry=0; // 앞 파일에서 마지막으로 매긴 권 번호(파일이 여러 개일 때 권 번호를 이어서 세기 위함)
   var detectedVolumes=[]; // 단행본 모드에서 파일 안에서 감지된 권 라벨(예: 1권~5권)
 
   // 표지/판권 감지 (미리 체크해서 배지 표시용)
@@ -1281,7 +1282,8 @@ function renderToc(){
       var isVolume=S.volumeMode;
       // 단행본 모드에서 파일 안에 권 구분(판권/"N권으로 계속")이 있으면 "1권, 2권…" 대목차 머리글을 미리보기에도 표시
       // (권 라벨은 편집 전 전체 회차 기준으로 계산해 두고, 남은 회차에 그대로 따라붙게 한다)
-      var fullVolLabels=isVolume?assignVolumeLabels(segs):null;
+      var fullVolLabels=isVolume?assignVolumeLabels(segs,volStartFromName(rawStem)||(volCarry+1)):null;
+      if(fullVolLabels)volCarry=assignVolumeLabels.lastVol;
       segs.forEach(function(sg,k){sg._vol=fullVolLabels?fullVolLabels[k]:null;});
       var segVolLabels=fullVolLabels?visSegs.map(function(sg){return sg._vol;}):null;
       var prevVolLabel=null;
@@ -1846,6 +1848,12 @@ function detectInlineCoverImgs(text){
     }
     var looksLikeIcon=sizeSaysIcon||precedesHeading;
     var isCover=strongMarker&&!looksLikeIcon;
+    // 표지 확정 규칙: data-is-cover="true"이거나, 표지 마커(alt=cover 등)가 있으면서 크기가 큰 이미지(가로/세로 400 이상)는
+    // 바로 뒤에 제목이 온다는 이유만으로 "회차 아이콘"으로 분류하지 않는다.
+    // (카카오페이지 캡처는 파일 맨 앞 cover.jpg와 각 권 끝 cover1~4.jpg 바로 뒤에 제목/판권 h1이 와서 아이콘으로 오인되곤 했음 —
+    //  그러면 삽화 전체 선택 시 표지까지 같이 바뀐다)
+    var isBig=(w!==null&&w>=400)||(h!==null&&h>=400);
+    if(!sizeSaysIcon&&(/data-is-cover\s*=\s*[\"']true[\"']/i.test(tag)||(strongMarker&&isBig)))isCover=true;
     out.push({index:m.index,len:tag.length,tag:tag,looksCover:isCover,looksLikeIcon:looksLikeIcon,precedesHeading:precedesHeading});
   }
   return out;
@@ -2884,8 +2892,16 @@ function closeChapterPreview(){
 // 한 파일에 여러 권(예: 1~5권)이 이어 붙어 저장된 경우, 각 권 끝의 판권 페이지(p.title "… N권")나
 // "『…』 N+1권으로 계속" 줄로 권 경계를 찾아 세그먼트마다 "N권" 라벨을 붙인다.
 // 권 표시가 하나도 없으면 null을 돌려준다(→ 기존처럼 파일명이 상위 목차가 됨).
-function assignVolumeLabels(segments){
-  var ends=[],found=false,lastVol=0;
+// 파일명에서 시작 권 번호를 읽는다: "…1-7권", "…8-17권(완결)" → 1, 8 / "…3권" → 3. 없으면 null
+function volStartFromName(name){
+  var m=String(name||'').match(/(\d+)\s*[-~–—]\s*\d+\s*권/)||String(name||'').match(/(\d+)\s*권/);
+  return m?parseInt(m[1],10):null;
+}
+// startVol: 판권의 "N권" 표시가 없어서 "다음 권에 계속" 개수로 셀 때 첫 권 번호(기본 1).
+// 여러 파일이 이어질 때 파일마다 1부터 다시 세면 8-17권 파일이 1~10권이 되어버리므로, 호출하는 쪽에서
+// 파일명의 시작 권 번호 또는 앞 파일의 마지막 권 다음 번호를 넘겨준다. 마지막으로 매긴 권 번호는 assignVolumeLabels.lastVol에 남긴다.
+function assignVolumeLabels(segments,startVol){
+  var ends=[],found=false,lastVol=(startVol&&startVol>0?startVol:1)-1;
   segments.forEach(function(seg){
     var t=document.createElement('div');t.innerHTML=seg.html;
     var vol=null;
@@ -2913,6 +2929,7 @@ function assignVolumeLabels(segments){
     if(v!==null){for(var k=start;k<=j;k++)labels[k]=v+'권';start=j+1;last=v;}
   });
   for(var k=start;k<segments.length;k++)labels[k]=(last+1)+'권'; // 마지막 판권 이후에 남은 회차는 다음 권으로 간주
+  assignVolumeLabels.lastVol=start<segments.length?last+1:last;
   return labels;
 }
 
@@ -2921,6 +2938,7 @@ function makeChapters(files,opts){
   var titlePageToggle=titleOwnPageEl?titleOwnPageEl.checked:false;
   S._imgDedup=dedupeImgMap(S.imgMap);
   var result=[];
+  var volCarry=0; // 앞 파일에서 마지막으로 매긴 권 번호
   files.forEach(function(f,i){
     var raw=f.text||'';
     var isHtml=raw.trim().startsWith('<');
@@ -2989,7 +3007,8 @@ function makeChapters(files,opts){
     // 세그먼트 2개 이상 — 실제로 파일 분리. "단행본" 체크된 파일만 원본 파일명을 상위(권) 목차로 묶는다.
     var useVolume=S.volumeMode;
     // 파일 안에 권 구분이 있으면(예: 1~5권이 한 파일) 파일명 대신 "1권, 2권…"을 각각 대목차로 사용
-    var volLabels=useVolume?assignVolumeLabels(fullSegs):null;
+    var volLabels=useVolume?assignVolumeLabels(fullSegs,volStartFromName(rawStem)||(volCarry+1)):null;
+    if(volLabels)volCarry=assignVolumeLabels.lastVol;
     fullSegs.forEach(function(sg,k){sg._vol=volLabels?volLabels[k]:null;});
     // ② 목차 미리보기에서 삭제/순서 변경한 내용 반영
     var keptSegs=applySegEdits(f.name,fullSegs);
