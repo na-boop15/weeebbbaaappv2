@@ -2512,7 +2512,7 @@ function mergeCssWithDedup(cssBlocks){
   return out;
 }
 
-var BASE_CSS="body{font-family:'Noto Serif KR','Noto Serif',Georgia,serif;line-height:1.8;margin:1.4em;color:#1a1410;}p{margin:0 0 .75em;}h1,h2,h3{font-weight:600;margin:1.4em 0 .6em;}hr{border:none;border-top:1px solid #ccc;margin:2em auto;width:60%;}.comment{font-size:.85em;color:#888;}.pgbreak-before{page-break-before:always;break-before:page;}";
+var BASE_CSS="body{font-family:'Noto Serif KR','Noto Serif',Georgia,serif;line-height:1.8;margin:1.4em;color:#1a1410;}p{margin:0 0 .75em;}h1,h2,h3{font-weight:600;font-size:1.1em;line-height:1.4;margin:1.4em 0 .6em;}hr{border:none;border-top:1px solid #ccc;margin:2em auto;width:60%;}.comment{font-size:.85em;color:#888;}.pgbreak-before{page-break-before:always;break-before:page;}";
 
 
 
@@ -2658,6 +2658,10 @@ function flattenToUnits(root){
       var elIsTitleNo=el.classList&&el.classList.contains('title_no');
       var isHeadingTag=/^H[1-4]$/.test(el.tagName)&&!isFakeHeading&&(hasTitleNoClass?elIsTitleNo:true);
       if(isHeadingTag){
+        // 텍스트도 이미지도 없는 빈 헤딩(예: 카카오페이지 캡처의 <h1 class="mainTitle sigil_not_in_toc"></h1>)은
+        // 회차 제목이 아니므로 무시한다. 그대로 두면 "제목 없는 회차"로 취급돼 바로 뒤에 오는 회차 아이콘(mark.png)이
+        // 그 가짜 회차 안에 갇히고, 가짜 회차가 중복 제거에서 통째로 사라지면서 아이콘도 같이 사라진다.
+        if(!el.textContent.trim()&&!el.querySelector('img'))return;
         units.push({type:'heading',html:el.outerHTML,text:el.textContent.trim()});
       }else if(isWrapperDiv(el)){
         walk(el);
