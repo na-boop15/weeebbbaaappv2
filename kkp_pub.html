@@ -1424,6 +1424,22 @@ function checkSequence(){
   else{el.textContent=summaryParts.join(' / ')+'\n'+issueLines.join('\n');el.className='seq-result warn';}
 }
 
+// 삽화 목록의 행 썸네일용: base64 data URL을 행마다 <img src>에 통째로 넣으면, 같은 이미지를 수백 곳에 연결했을 때
+// (이미지 크기 × 슬롯 수)만큼 문자열이 DOM에 복제되어 메모리가 터진다. 같은 이미지는 blob: 주소 하나를 만들어 모든 행이 공유한다.
+var _thumbUrlCache=new Map();
+function thumbSrc(b64){
+  if(!b64||b64.indexOf('data:')!==0)return b64;
+  var u=_thumbUrlCache.get(b64);
+  if(u)return u;
+  try{
+    var i=b64.indexOf(','),mt=(b64.slice(5,i).split(';')[0])||'image/png';
+    var bin=atob(b64.slice(i+1)),n=bin.length,arr=new Uint8Array(n);
+    for(var k=0;k<n;k++)arr[k]=bin.charCodeAt(k);
+    u=URL.createObjectURL(new Blob([arr],{type:mt}));
+  }catch(e){u=b64;}
+  _thumbUrlCache.set(b64,u);
+  return u;
+}
 function renderImgPanel(){
   var panel=document.getElementById('img-panel');
   var list=document.getElementById('img-list');
@@ -1457,7 +1473,7 @@ function renderImgPanel(){
     chkWrap.appendChild(chk);row.appendChild(chkWrap);
     var thumb=document.createElement('div');
     thumb.style.cssText='width:36px;height:36px;border-radius:6px;border:1px solid var(--bd);background:var(--surf);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;overflow:hidden;';
-    if(imgData){thumb.innerHTML='<img src="'+imgData.b64+'" style="width:100%;height:100%;object-fit:cover;"/>';}
+    if(imgData){var tIm=document.createElement('img');tIm.src=thumbSrc(imgData.b64);tIm.style.cssText='width:100%;height:100%;object-fit:cover;';tIm.alt='';thumb.appendChild(tIm);}
     else{thumb.textContent='🖼';}
     row.appendChild(thumb);
     var label=document.createElement('span');
@@ -1542,30 +1558,67 @@ function fmtKB(bytes){return (bytes/1024).toFixed(1)+' KB';}
 // 뷰어가 넣은 style="width:80.29px;height:73.17px")를 읽고 고쳐 쓴다.
 // 표지·중간표지는 항상 페이지에 꽉 차게(max-width:100%) 렌더링되므로 이 기능은 본문 삽화(inline)에만 의미가 있다.
 // ══════════════════════════════════════════════════════════════
-function getFileImgList(fileIdx){
-  var f=S.files[fileIdx];
-  if(!f||!f.text)return[];
-  var tmp=document.createElement('div');tmp.innerHTML=f.text;
-  return Array.from(tmp.querySelectorAll('img'));
+// ── <img> 태그 크기 읽기/쓰기 ──
+// 수 MB짜리 파일 전체를 DOM으로 파싱·직렬화하지 않고, 삽화 목록(detectInlineCoverImgs)이 쓰는 것과 같은 방식으로
+// 본문 문자열에서 <img ...> 태그만 정규식으로 찾아 그 태그 문자열만 고친다. (순번 = 삽화 키의 두 번째 숫자와 동일)
+// 예전엔 이미지 1장마다 파일 전체를 DOM으로 파싱·직렬화해서, 같은 아이콘이 500곳 넘게 연결돼 있으면 앱이 멈추고 탭이 초기화됐다.
+function listImgTags(text){
+  var out=[],re=/<img\b[^>]*>/gi,m;
+  while((m=re.exec(text)))out.push({index:m.index,len:m[0].length,tag:m[0]});
+  return out;
 }
-function readImgSize(fileIdx,imgPos){
-  var el=getFileImgList(fileIdx)[imgPos];
-  if(!el)return null;
-  var w=(el.style&&el.style.width)?parseFloat(el.style.width):(el.getAttribute('width')?parseFloat(el.getAttribute('width')):null);
-  var h=(el.style&&el.style.height)?parseFloat(el.style.height):(el.getAttribute('height')?parseFloat(el.getAttribute('height')):null);
+function readTagSize(tag){
+  var st=tag.match(/\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+  var css=st?(st[1]!==undefined?st[1]:st[2]):'';
+  var wm=css.match(/(?:^|;)\s*width\s*:\s*([\d.]+)px/i)||tag.match(/\swidth\s*=\s*["']?([\d.]+)/i);
+  var hm=css.match(/(?:^|;)\s*height\s*:\s*([\d.]+)px/i)||tag.match(/\sheight\s*=\s*["']?([\d.]+)/i);
+  var w=wm?parseFloat(wm[1]):null,h=hm?parseFloat(hm[1]):null;
   return(w||h)?{width:w,height:h}:null;
 }
-function writeImgSize(fileIdx,imgPos,width,height){
+// 한쪽 값만 주면 다른 쪽은 auto로 둬서 비율이 찌그러지지 않게 한다.
+function rewriteTagSize(tag,width,height){
+  var st=tag.match(/\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+  var decl=[];
+  if(st){
+    (st[1]!==undefined?st[1]:st[2]).split(';').forEach(function(d){
+      d=d.trim();
+      if(d&&!/^(?:width|height)\s*:/i.test(d))decl.push(d);
+    });
+    tag=tag.replace(st[0],'');
+  }
+  if(width||height){
+    decl.push('width:'+(width?width+'px':'auto'));
+    decl.push('height:'+(height?height+'px':'auto'));
+  }
+  tag=tag.replace(/\s(?:width|height)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi,'');
+  var style=' style="'+decl.join(';')+(decl.length?';':'')+'"';
+  return tag.replace(/\s*(\/?)>$/,function(_,sl){return style+(sl?' /':'')+'>';});
+}
+function readImgSize(fileIdx,imgPos){
   var f=S.files[fileIdx];
-  if(!f||!f.text)return false;
-  var tmp=document.createElement('div');tmp.innerHTML=f.text;
-  var el=Array.from(tmp.querySelectorAll('img'))[imgPos];
-  if(!el)return false;
-  if(width)el.style.width=width+'px';
-  if(height)el.style.height=height+'px';
-  el.removeAttribute('width');el.removeAttribute('height');
-  f.text=tmp.innerHTML;
-  return true;
+  if(!f||!f.text)return null;
+  var tags=listImgTags(f.text);
+  return tags[imgPos]?readTagSize(tags[imgPos].tag):null;
+}
+// 한 파일 안의 여러 <img>(imgPositions)에 크기를 한 번에 적용 — 문자열을 한 번만 훑는다.
+function writeImgSizeBatch(fileIdx,imgPositions,width,height){
+  var f=S.files[fileIdx];
+  if(!f||!f.text||!imgPositions.length)return 0;
+  var tags=listImgTags(f.text);
+  var want={};imgPositions.forEach(function(pos){want[pos]=1;});
+  var parts=[],last=0,n=0;
+  tags.forEach(function(t,k){
+    if(!want[k])return;
+    parts.push(f.text.slice(last,t.index),rewriteTagSize(t.tag,width,height));
+    last=t.index+t.len;n++;
+  });
+  if(!n)return 0;
+  parts.push(f.text.slice(last));
+  f.text=parts.join('');
+  return n;
+}
+function writeImgSize(fileIdx,imgPos,width,height){
+  return writeImgSizeBatch(fileIdx,[imgPos],width,height)>0;
 }
 var imgSizeModalGroup=null;
 function openImgSizeModal(group){
@@ -1581,19 +1634,30 @@ function openImgSizeModal(group){
   document.getElementById('imgsize-modal').style.display='flex';
 }
 function closeImgSizeModal(){document.getElementById('imgsize-modal').style.display='none';imgSizeModalGroup=null;}
-function applyImgSizeModal(){
+async function applyImgSizeModal(){
   if(!imgSizeModalGroup)return;
   var w=parseFloat(document.getElementById('imgsize-w').value)||null;
   var h=parseFloat(document.getElementById('imgsize-h').value)||null;
   if(!w&&!h){toast('너비 또는 높이를 입력해주세요','err');return;}
   var inlineItems=imgSizeModalGroup.items.filter(function(it){return it.kind==='inline';});
-  var applied=0;
+  // 파일별로 묶어서(파일당 1번만 파싱) 적용
+  var byFile={};
   inlineItems.forEach(function(it){
     var parts=it.key.split('_');
     var fileIdx=parseInt(parts[0],10),imgPos=parseInt(parts[1],10);
-    if(writeImgSize(fileIdx,imgPos,w,h))applied++;
+    (byFile[fileIdx]=byFile[fileIdx]||[]).push(imgPos);
   });
   closeImgSizeModal();
+  toast('크기 적용 중... (파일이 크면 잠시 걸려요)','ok');
+  var applied=0;
+  var fileKeys=Object.keys(byFile);
+  for(var i=0;i<fileKeys.length;i++){
+    await new Promise(function(r){setTimeout(r,30);}); // 화면이 멈춘 것처럼 보이지 않게 파일 사이마다 한 번 숨 돌림
+    var fi=parseInt(fileKeys[i],10);
+    try{applied+=writeImgSizeBatch(fi,byFile[fileKeys[i]],w,h);}catch(e){console.error(e);}
+  }
+  // 본문 HTML이 바뀌어 삽화 목록의 위치 정보(hitIndex)가 어긋났으므로 다시 계산 (이후 삽화 삭제 등이 엉뚱한 곳을 자르지 않게)
+  try{renderImgPanel();}catch(e){}
   toast(applied+'곳에 크기 적용됨','ok');
 }
 
@@ -1766,18 +1830,28 @@ async function computeImgMgrPreview(){
   if(!items.length){previewEl.textContent='';return;}
   previewEl.textContent='예상 용량 계산 중...';
   var origTotal=0,estTotal=0,skipGif=0;
+  var pcache=new Map();
   for(var i=0;i<items.length;i++){
     var ref=items[i].ref;
     var origSize=b64SizeBytes(ref.b64);
     origTotal+=origSize;
     if(ref.mt==='image/gif'){estTotal+=origSize;skipGif++;continue;}
     try{
-      var r=await compressOne(ref,q,mw);
+      var r=await compressOneCached(ref,q,mw,pcache);
       estTotal+=r?r.size:origSize;
     }catch(e){estTotal+=origSize;}
   }
   var pct=origTotal?Math.round((1-estTotal/origTotal)*100):0;
   previewEl.textContent='예상: '+fmtKB(origTotal)+' → 약 '+fmtKB(estTotal)+' ('+(pct>0?'-'+pct+'%':pct+'%')+')'+(skipGif?' · GIF '+skipGif+'개 제외':'');
+}
+// 같은 이미지를 수백 곳에 연결한 경우(예: 회차 아이콘 하나를 전체 적용) 슬롯마다 따로 압축하면 캔버스 작업이 수백 번 반복돼 멈춘다.
+// 원본 b64가 같으면 결과를 재사용한다.
+async function compressOneCached(ref,q,mw,cache){
+  var k=ref.b64;
+  if(cache.has(k))return cache.get(k);
+  var r=await compressOne(ref,q,mw);
+  cache.set(k,r);
+  return r;
 }
 async function applyImgMgrCompression(){
   var q=parseFloat(document.getElementById('imgmgr-quality').value);
@@ -1786,11 +1860,13 @@ async function applyImgMgrCompression(){
   if(!items.length){toast('압축할 이미지가 없습니다','err');return;}
   toast('압축 적용 중...','ok');
   var applied=0;
+  var cache=new Map(),done=new Set();
   for(var i=0;i<items.length;i++){
     var ref=items[i].ref;
-    if(ref.mt==='image/gif')continue;
+    if(ref.mt==='image/gif'||done.has(ref))continue;
+    done.add(ref);
     try{
-      var r=await compressOne(ref,q,mw);
+      var r=await compressOneCached(ref,q,mw,cache);
       if(r){ref.b64=r.b64;ref.ext=r.ext;ref.mt=r.mt;applied++;}
     }catch(e){}
   }
