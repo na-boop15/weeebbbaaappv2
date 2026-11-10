@@ -2331,6 +2331,18 @@ function processContent(raw,opts){
       return '<p class="scene-break" style="text-align:center;color:'+scColor+';font-size:'+scSize+'em;margin:'+scMargin+'em 0;">'+esc(txt)+'</p>';
     });
   }
+  if(opts.indent){
+    // 들여쓰기는 CSS가 p:not(.scene-break)로 적용되는데, scene-break 클래스는 위 "장면전환 치환"을 켰을 때만 붙는다.
+    // 치환을 안 쓰면 ***, * * * 같은 장면전환 줄이 일반 문단처럼 들여쓰기를 받던 문제 —
+    // 별표만으로 된 문단에는 (치환 여부와 상관없이) scene-break 클래스를 붙여 들여쓰기에서 제외한다.
+    content=content.replace(/<p\b([^>]*)>((?:\s|&nbsp;|<(?!\/?p\b)[^>]+>)*(?:\*(?:\s|&nbsp;|<(?!\/?p\b)[^>]+>)*){3,})<\/p>/g,function(m,attrs,inner){
+      if(/class\s*=\s*["'][^"']*\bscene-break\b/.test(attrs))return m;
+      if(/class\s*=\s*"/.test(attrs))attrs=attrs.replace(/class\s*=\s*"([^"]*)"/,'class="$1 scene-break"');
+      else if(/class\s*=\s*'/.test(attrs))attrs=attrs.replace(/class\s*=\s*'([^']*)'/,"class='$1 scene-break'");
+      else attrs+=' class="scene-break"';
+      return '<p'+attrs+'>'+inner+'</p>';
+    });
+  }
   if(opts.comment){
     // 태그 속성(예: style="color: rgb(116, 116, 116)") 안의 괄호까지 잘못 잡지 않도록
     // 태그와 텍스트를 분리한 뒤 텍스트 구간에만 괄호 주석 스타일을 적용한다.
@@ -2924,7 +2936,8 @@ function gatherChapterOpts(){
     scUseColor:document.getElementById('chk-sc-color').checked,
     hColor:v('h-hex'),
     hOrigColor:S.detectedHColor||null,
-    removeHr:document.getElementById('chk-remove-hr').checked
+    removeHr:document.getElementById('chk-remove-hr').checked,
+    indent:!!(document.getElementById('chk-indent')&&document.getElementById('chk-indent').checked)
   };
 }
 

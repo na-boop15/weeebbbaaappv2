@@ -2002,6 +2002,20 @@ function updateEpIndentPreview(){
   if(el)el.style.textIndent=v+'em';
 }
 
+/* 별표(***)·기호(◆◆◆ 등)만 있는 장면전환 줄(p/div)에 epNoIndent 클래스를 붙인다.
+   본문 p 전체에 들여쓰기를 줄 때 장면전환 줄은 제외하기 위한 것.
+   감지된 장면전환 클래스(.scene 등)에 text-indent:0을 거는 방식은, 장면전환 줄에 class="normal"처럼
+   본문과 같은 클래스가 박혀 있는 EPUB에서 본문 들여쓰기까지 지워버릴 수 있어 쓰지 않는다. */
+var SCENE_NOINDENT_RE=/<(p|div)((?:\s[^>]*)?)>(\s*(?:<span[^>]*>)?\s*(?:[\*\-—–·•◆■○●♦※]\s*){3,}\s*(?:<\/span>)?\s*(?:<br\s*\/?>)?\s*)<\/\1>/gi;
+function tagSceneNoIndent(html){
+  return html.replace(SCENE_NOINDENT_RE,function(m,tag,attrs,inner){
+    if(/class\s*=\s*["'][^"']*\bepNoIndent\b/.test(attrs))return m;
+    if(/class\s*=\s*"/.test(attrs))attrs=attrs.replace(/class\s*=\s*"([^"]*)"/,'class="$1 epNoIndent"');
+    else if(/class\s*=\s*'/.test(attrs))attrs=attrs.replace(/class\s*=\s*'([^']*)'/,"class='$1 epNoIndent'");
+    else attrs+=' class="epNoIndent"';
+    return '<'+tag+attrs+'>'+inner+'</'+tag+'>';
+  });
+}
 document.getElementById('btnEpubSave').addEventListener('click',async function(){
   if(!epubZip){toast('먼저 EPUB 파일을 선택하세요','err');return;}
   var btn=this;btn.disabled=true;btn.textContent='처리 중...';
@@ -2304,6 +2318,18 @@ document.getElementById('btnEpubSave').addEventListener('click',async function()
       if(indentWrapClass){
         patched=patchBlock(patched,'.'+indentWrapClass+' p',{'text-indent':indentV+'em'});
       }
+      /* 장면전환(***) 줄은 들여쓰기 제외 */
+      patched=patchBlock(patched,'.epNoIndent',{'text-indent':'0!important'});
+      epProg(69,'장면전환 줄 들여쓰기 제외 ('+htmlPathsAll.length+'개)...');
+      var noIndentCnt=0;
+      for(var ni=0;ni<htmlPathsAll.length;ni++){
+        var np=htmlPathsAll[ni];
+        var ns=await workZip.file(np).async('string');
+        var nsNew=tagSceneNoIndent(ns);
+        if(nsNew!==ns){noIndentCnt++;workZip.file(np,nsNew);}
+        if(ni%20===0)await tick();
+      }
+      if(noIndentCnt)toast('장면전환 줄은 들여쓰기에서 제외함 ('+noIndentCnt+'개 챕터)','ok');
     }
 
     /* 제목 밑 구분선(hr) 제거 */
