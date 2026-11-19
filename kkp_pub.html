@@ -177,7 +177,7 @@ hr.div{border:none;border-top:1px solid var(--bd);margin:4px 0;}
         </div>
         <div class="btn-row" style="margin-top:9px;">
           <button class="btn btn-ghost btn-sm" onclick="clearAll()">전체 삭제</button>
-          <button class="btn btn-ghost btn-sm" onclick="sortByName()">이름순 정렬</button>
+          <button class="btn btn-ghost btn-sm" onclick="sortByName()" title="파일명의 회차 번호 순서로 정렬 (본편 → 에필로그 → 외전). 번호 없는 파일(표지 등)은 제자리">회차순 정렬</button>
           <button class="btn btn-ghost btn-sm" onclick="togglePasteBox()">✏️ 붙여넣기로 추가</button>
         </div>
         <div id="paste-box" style="display:none;margin-top:9px;flex-direction:column;gap:7px;">
@@ -579,9 +579,18 @@ function detectMissingChapters(labels){
     if(found)return;
     var en=t.match(/(?:Chapter|Episode|Part|Volume|Ch|Ep)\.?\s*(\d+)/i);
     if(en){(byUnit['en']=byUnit['en']||[]).push(parseInt(en[1],10));return;}
-    var p=t.match(/^\s*#?\s*(\d+)\s*[.\s]/);
+    var p=t.match(/^\s*#?\s*(\d+)(?:\s*[.\s]|$)/); // "165" 처럼 숫자만 있는 이름(165.txt)도 인식
     if(p){(byUnit['plain']=byUnit['plain']||[]).push(parseInt(p[1],10));}
   });
+  // 단위 없는 숫자(165.txt)와 단위 있는 이름(…숨김 9화)이 섞여 있으면 따로 세지 말고 다수 회차 단위로 합쳐서 센다.
+  // (안 합치면 txt 쪽이 통째로 빠져서 "165~282화 누락"처럼 보임)
+  if(byUnit.plain){
+    var bestCU=null,bestCD=0;
+    ['화','회','편','장'].forEach(function(u){
+      if(byUnit[u]){var d=new Set(byUnit[u]).size;if(d>bestCD){bestCU=u;bestCD=d;}}
+    });
+    if(bestCU){byUnit[bestCU]=byUnit[bestCU].concat(byUnit.plain);delete byUnit.plain;}
+  }
   // 서로 다른 값(distinct)이 가장 많은 단위를 기준으로 삼는다.
   // (예: "1권"이 30번, "1~30화"가 각 1번씩이면 → distinct 기준 '화'가 채택됨.
   //  단순 등장 횟수 기준이면 반복적인 '권' 표기에 밀려 오판할 수 있음)
@@ -593,11 +602,25 @@ function detectMissingChapters(labels){
   if(!topUnit||topDistinct<3)return{unit:null,missing:[],nums:[]};
   var nums=byUnit[topUnit].slice().sort(function(a,b){return a-b;});
   var first=nums[0],last=nums[nums.length-1];
-  if(last-first>1000||first>50)return{unit:topUnit,missing:[],nums:nums};
+  var cnt={};nums.forEach(function(n){cnt[n]=(cnt[n]||0)+1;});
+  var dups=Object.keys(cnt).filter(function(k){return cnt[k]>1;}).map(Number).sort(function(a,b){return a-b;});
+  if(last-first>1000||first>50)return{unit:topUnit,missing:[],nums:nums,dups:dups};
   var set={};nums.forEach(function(n){set[n]=true;});
   var missing=[];
   for(var n=first;n<=last;n++){if(!set[n]){missing.push(n);if(missing.length>100)break;}}
-  return{unit:(topUnit==='en'||topUnit==='plain')?'':topUnit,missing:missing,nums:nums};
+  return{unit:(topUnit==='en'||topUnit==='plain')?'':topUnit,missing:missing,nums:nums,dups:dups};
+}
+
+// 본편/에필로그/외전·번외를 따로 검사 — 외전 1~8화가 본편 182~415화와 한 줄 번호로 섞여 "9~181화 누락"으로 오탐되는 것을 막는다.
+function detectMissingByCategory(labels){
+  var groups={main:[],epilogue:[],side:[]};
+  (labels||[]).forEach(function(t){
+    var s=String(t||'').normalize('NFC');
+    groups[/에필로그|에필/.test(s)?'epilogue':(/외전|번외/.test(s)?'side':'main')].push(s);
+  });
+  var out={};
+  ['main','epilogue','side'].forEach(function(c){out[c]=detectMissingChapters(groups[c]);});
+  return out;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -901,7 +924,7 @@ async function addFiles(fl){
       S.files.push({name:file.name,text:text});added++;
     }
   }
-  if(added>0){renderList();renderToc();renderImgPanel();updateExtractedCssPreview();applyAutoTitleAuthor(archiveName);applyAutoCompletion();applyAutoEpisode();refreshDetectedHColor();toast(added+'개 추가','ok');}
+  if(added>0){sortFilesByChapter();renderList();renderToc();renderImgPanel();updateExtractedCssPreview();applyAutoTitleAuthor(archiveName);applyAutoCompletion();applyAutoEpisode();refreshDetectedHColor();toast(added+'개 추가','ok');}
   }finally{addFilesLock=false;}
 }
 
@@ -1051,7 +1074,69 @@ function clearAll(){
   if(t)delete t.dataset.userEdited;if(a)delete a.dataset.userEdited;if(c)delete c.dataset.userSet;
   var ev=document.getElementById('complete-evidence');if(ev)ev.textContent='';
 }
-function sortByName(){S.files.sort(function(a,b){return a.name.localeCompare(b.name,'ko',{numeric:true});});renderList();renderToc();}
+// ─── 회차 번호 기준 정렬 ──────────────────────────────────────────
+// zip을 여러 개 올리거나 html/txt가 섞여 있어도, 올린 순서·확장자·이름 글자(숫자로 시작하는 165.txt vs 한글로 시작하는 …숨김 9화.html)와
+// 상관없이 파일명에서 읽은 회차 번호 순서로 놓는다. 본편 → 에필로그 → 외전·번외 순.
+function fileChapterKey(name){
+  var t=String(name||'').normalize('NFC').replace(/\.\w+$/,'');
+  var cat=/에필로그|에필/.test(t)?1:(/외전|번외/.test(t)?2:0);
+  var ep=null,vol=null,m,re;
+  re=/(\d+)\s*(?:화|회|편|장)/g;while((m=re.exec(t)))ep=parseInt(m[1],10);
+  re=/(\d+)\s*(?:권|부)/g;while((m=re.exec(t)))vol=parseInt(m[1],10);
+  if(ep===null){re=/(?:chapter|episode|ep|ch)\.?\s*(\d+)/gi;while((m=re.exec(t)))ep=parseInt(m[1],10);}
+  if(ep===null&&vol===null){
+    var p=t.match(/^\s*#?\s*(\d+)(?!\d)/); // 165.txt, 002.html 처럼 숫자로 시작하는 이름
+    if(p)ep=parseInt(p[1],10);
+  }
+  if(ep===null&&vol===null)return null; // 번호를 못 읽으면 정렬 대상에서 제외(표지·판권 등은 제자리)
+  // "1권.html"처럼 권 번호만 있으면 그 번호를 순서로 쓴다. 회차 번호가 있으면 권/부 번호는 보조(아래 sortFilesByChapter에서 필요할 때만 사용)
+  if(ep===null)return{cat:cat,vol:0,ep:vol};
+  return{cat:cat,vol:vol||0,ep:ep};
+}
+// perm[새위치]=예전위치 — 파일 순서를 바꾸면서, 파일 번호로 연결돼 있는 삽화·제목 수정도 같이 옮긴다.
+function applyFilePermutation(perm){
+  var oldToNew={};perm.forEach(function(o,n){oldToNew[o]=n;});
+  var newFiles=perm.map(function(o){return S.files[o];});
+  var newToc={};
+  Object.keys(S.tocOverrides).forEach(function(k){var n=oldToNew[parseInt(k,10)];if(n!==undefined)newToc[n]=S.tocOverrides[k];});
+  var newImg={};
+  Object.keys(S.imgMap).forEach(function(k){
+    var m=k.match(/^(\d+)(_.*)?$/);
+    if(!m){newImg[k]=S.imgMap[k];return;}
+    var n=oldToNew[parseInt(m[1],10)];
+    newImg[(n===undefined?m[1]:n)+(m[2]||'')]=S.imgMap[k];
+  });
+  S.files=newFiles;S.tocOverrides=newToc;S.imgMap=newImg;
+}
+function sortFilesByChapter(){
+  var keys=S.files.map(function(f){return fileChapterKey(f.name);});
+  var slots=[];
+  keys.forEach(function(k,i){if(k)slots.push(i);});
+  if(slots.length<2)return false;
+  // "1권 1화", "2권 1화"처럼 권마다 회차 번호가 다시 시작하는 경우에만 권 번호를 정렬에 쓴다.
+  // (이름 속 "(1부 완)", "2부" 같은 표기를 권 번호로 오해해 맨 뒤로 보내는 것을 방지)
+  var byEp={};
+  slots.forEach(function(i){var k=keys[i];var id=k.cat+':'+k.ep;(byEp[id]=byEp[id]||{})[k.vol]=true;});
+  var useVol=Object.keys(byEp).some(function(id){return Object.keys(byEp[id]).length>1;});
+  var sorted=slots.slice().sort(function(a,b){
+    var ka=keys[a],kb=keys[b];
+    return (ka.cat-kb.cat)||(useVol?(ka.vol-kb.vol):0)||(ka.ep-kb.ep)||(a-b);
+  });
+  var perm=S.files.map(function(_,i){return i;});
+  slots.forEach(function(slot,k){perm[slot]=sorted[k];}); // 번호 없는 파일은 그 자리에 그대로 둔다
+  if(!perm.some(function(o,n){return o!==n;}))return false;
+  applyFilePermutation(perm);
+  return true;
+}
+function sortByName(){
+  if(!sortFilesByChapter()){
+    // 회차 번호를 읽을 수 있는 파일이 거의 없으면 이름순으로
+    var idx=S.files.map(function(_,i){return i;});
+    idx.sort(function(a,b){return S.files[a].name.localeCompare(S.files[b].name,'ko',{numeric:true});});
+    if(idx.some(function(o,n){return o!==n;}))applyFilePermutation(idx);
+  }
+  renderList();renderToc();renderImgPanel();
+}
 
 function detectPageType(html){
   if(!html||!html.trim().startsWith('<'))return null;
@@ -1060,10 +1145,15 @@ function detectPageType(html){
   // 표지 감지: 이미지만 있거나 텍스트가 매우 짧고 표지 관련 키워드
   var imgs=tmp.querySelectorAll('img');
   var textLen=text.length;
+  // 키워드는 본문 첫 300자만 보기 때문에 소설 본문에 "제작자", "인쇄" 같은 단어가 나오면 정상 회차가 판권으로 오인됐다
+  // (실제로 "에픽 베어 제작자" 때문에 254·264·265화 등이 판권으로 잡힘 → 정리 시 삭제될 위험).
+  // 표지·판권 페이지는 글이 짧으므로 문서 전체 글자 수가 짧을 때만 키워드 규칙을 적용한다.
+  var fullTextLen=(tmp.textContent||'').replace(/\s+/g,' ').trim().length;
+  var shortPage=fullTextLen<1500;
   if(imgs.length>=1&&textLen<80)return'cover';
-  if(/^(표지|cover|커버)/.test(text)||text.includes('표지 이미지')||(imgs.length>=1&&textLen<150&&/표지|cover/.test(text)))return'cover';
+  if(shortPage&&(/^(표지|cover|커버)/.test(text)||text.includes('표지 이미지')||(imgs.length>=1&&textLen<150&&/표지|cover/.test(text))))return'cover';
   // 판권 감지: ISBN, 판권 관련 키워드
-  if(/isbn|판권|copyright|©|출판사|발행인|초판|인쇄|제작|all rights|무단 전재|무단전재|등록번호/.test(text))return'copyright';
+  if(shortPage&&/isbn|판권|copyright|©|출판사|발행인|초판|인쇄|제작|all rights|무단 전재|무단전재|등록번호/.test(text))return'copyright';
   // 표지 이미지만 있는 파일
   if(imgs.length>=1&&tmp.querySelectorAll('p,div,span,h1,h2,h3').length<=3)return'cover';
   return null;
@@ -1189,6 +1279,7 @@ function renderToc(){
   var splitFileCount=0; // 여러 회차로 자동 분리되는 파일 개수 — 섹션 헤더의 단일 "단행본" 컨트롤에 집계 표시
   var splitChapterTotal=0; // 그 파일들이 실제로 분리되어 나올 회차 총 개수
   var volCarry=0; // 앞 파일에서 마지막으로 매긴 권 번호(파일이 여러 개일 때 권 번호를 이어서 세기 위함)
+  var mcLabels=[]; // 실제로 만들어질 회차 제목들(파일명이 아니라 분리·감지 결과) — 누락/중복 경고 계산용
   var detectedVolumes=[]; // 단행본 모드에서 파일 안에서 감지된 권 라벨(예: 1권~5권)
 
   // 표지/판권 감지 (미리 체크해서 배지 표시용)
@@ -1217,6 +1308,10 @@ function renderToc(){
     }
     var n=extractNum(stem);
     var isDup=n!==null&&dupSet[n];
+    if(pageType===null){
+      if(isHtmlFile&&fullCount>=2)visSegs.forEach(function(sg){mcLabels.push(sg.title);});
+      else mcLabels.push(displayTitle);
+    }
 
     // 메인 행
     var row=document.createElement('div');
@@ -1339,12 +1434,23 @@ function renderToc(){
     }
   });
 
-  if(missing.length){
-    var mi=document.createElement('div');
-    mi.style.cssText='padding:6px 11px;font-size:11.5px;color:var(--er);background:#F8E9E7;border:1px solid #E4B5B0;border-radius:8px;margin-top:2px;';
-    mi.textContent='⚠ 누락: '+missing.join(', ')+(mcInfo.unit||'화');
-    wrap.appendChild(mi);
-  }
+  var mcAll=detectMissingByCategory(mcLabels);
+  var mcCatName={main:'',epilogue:'에필로그 ',side:'외전·번외 '};
+  ['main','epilogue','side'].forEach(function(c){
+    var info=mcAll[c];
+    if(info.missing.length){
+      var mi=document.createElement('div');
+      mi.style.cssText='padding:6px 11px;font-size:11.5px;color:var(--er);background:#F8E9E7;border:1px solid #E4B5B0;border-radius:8px;margin-top:2px;';
+      mi.textContent='⚠ '+mcCatName[c]+'누락: '+info.missing.slice(0,60).join(', ')+(info.missing.length>60?' 외':'')+(info.unit||'화');
+      wrap.appendChild(mi);
+    }
+    if(info.dups&&info.dups.length){
+      var dm=document.createElement('div');
+      dm.style.cssText='padding:6px 11px;font-size:11.5px;color:var(--wn);background:var(--s2);border:1px solid #E4C79A;border-radius:8px;margin-top:2px;';
+      dm.textContent='⚠ '+mcCatName[c]+'번호가 같은 회차: '+info.dups.slice(0,40).join(', ')+(info.unit||'화')+' — 같은 회차가 두 번 들어갔거나 파일 내용과 이름이 다른지 확인해 보세요';
+      wrap.appendChild(dm);
+    }
+  });
   if(allDedupLog.length){
     var di=document.createElement('div');
     di.style.cssText='padding:7px 11px;font-size:11.5px;color:var(--wn);background:var(--s2);border:1px solid #E4C79A;border-radius:8px;margin-top:2px;line-height:1.65;';
