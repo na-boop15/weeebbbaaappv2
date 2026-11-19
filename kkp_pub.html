@@ -882,6 +882,9 @@ async function addFiles(fl){
         var zip=await JSZip.loadAsync(buf);
         var entries=[];
         zip.forEach(function(path,entry){
+          // 맥/아이클라우드에서 압축하면 파일마다 숨은 메타데이터 복사본(__MACOSX/폴더/._이름.html, 약 280바이트)이 같이 들어간다.
+          // 이름이 .html로 끝나서 회차로 읽히면 회차가 2개씩 뜨므로 건너뛴다. (.DS_Store도 함께 제외)
+          if(/(^|\/)__MACOSX\//.test(path)||/(^|\/)\._[^\/]*$/.test(path)||/(^|\/)\.DS_Store$/i.test(path))return;
           if(!entry.dir&&/\.(txt|html|htm|xhtml)$/i.test(path))entries.push({path:path,entry:entry});
         });
         entries.sort(function(a,b){return a.path.localeCompare(b.path,'ko',{numeric:true});});
